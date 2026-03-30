@@ -2,7 +2,7 @@ use super::CommandResult;
 use crate::model::{ArchivedKodexIndex, ArchivedSymbolKind, NONE_ID};
 use crate::query::filter;
 use crate::query::format::owner_name;
-use crate::query::symbol::kind_str;
+use crate::query::symbol::display_kind;
 use crate::query::{file_entry, s, sym as sym_at};
 use rustc_hash::{FxHashMap, FxHashSet};
 use std::fmt::Write;
@@ -352,7 +352,7 @@ fn detect_hub_utilities(
         .map(|(sid, refs, modules)| {
             let sym = sym_at(index, sid);
             let name = s(index, sym.name);
-            let kind = kind_str(&sym.kind);
+            let kind = display_kind(sym);
             NoiseCandidate {
                 exclude_name: name.to_string(),
                 display: format!("{kind:<6} {name}"),

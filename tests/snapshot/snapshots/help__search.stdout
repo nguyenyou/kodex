@@ -1,14 +1,16 @@
 Search for symbol definitions
 
-Usage: kodex search [OPTIONS] <QUERY>
+Usage: kodex search [OPTIONS] [QUERY]
 
 Arguments:
-  <QUERY>  Symbol name, FQN, or FQN suffix to search for
+  [QUERY]  Symbol name, FQN, or FQN suffix to search for (optional when --module is provided)
 
 Options:
       --idx <IDX>          Path to kodex.idx (default: .scalex/kodex.idx, or `KODEX_IDX` env var)
-      --kind <KIND>        Filter by symbol kind [possible values: class, trait, object, method, field, type, constructor]
+      --kind <KIND>        Filter by symbol kind [possible values: class, case-class, trait, object, method, field, type, constructor, enum]
       --module <MODULE>    Filter by module name (substring match; dotted patterns match segments in order)
       --limit <LIMIT>      [default: 50]
       --exclude <EXCLUDE>  
+      --include-noise      Include noise (generated code, plumbing methods, etc.) — excluded by default
   -h, --help               Print help
+

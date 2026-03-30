@@ -119,11 +119,11 @@ kodex search OrderService --module storage   # filter by module
 ```bash
 kodex search --module auth                       # all symbols in auth module
 kodex search --module auth --kind trait          # all traits in auth module
-kodex search --module billing.jvm --kind class   # all classes in billing JVM module
+kodex search --module billing.jvm --kind class   # plain classes in billing JVM module
 ```
 
 **Flags:**
-- `--kind`: class, case-class, trait, object, method, field, type, constructor, enum
+- `--kind`: class (plain only — excludes case classes and enums), case-class, trait, object, method, field, type, constructor, enum
 - `--module`: substring match, or dotted segments in order (e.g. `storage.jvm` matches `modules.storage.storage.jvm`)
 - `--limit`: default 50 (0=unlimited)
 - `--include-noise`: show noise (generated code, plumbing methods) — excluded by default
@@ -374,7 +374,7 @@ kodex info com/example/OrderService#createOrder().       # BROKEN — shell eats
 
 | Flag | Commands | Default | Description |
 |---|---|---|---|
-| `--kind K` | search | all | class, case-class, trait, object, method, field, type, constructor, enum |
+| `--kind K` | search | all | class (plain only), case-class, trait, object, method, field, type, constructor, enum |
 | `--module M` | search | all | Substring or dotted segment match on module name |
 | `--limit N` | search, refs, noise | 50 / 100 / 15 | Max results (0=unlimited) |
 | `--depth N` | calls, trace | 3 | Call tree recursion depth |
@@ -425,10 +425,11 @@ kodex search Repository --kind trait
 kodex info 'com/example/Repository#'    # Implementations section lists them
 ```
 
-**Find case classes or enums:**
+**Find case classes, enums, or plain classes:**
 ```bash
 kodex search Config --kind case-class   # case classes matching "Config"
 kodex search Status --kind enum         # Scala 3 enums matching "Status"
+kodex search Engine --kind class        # plain classes only (no case classes or enums)
 ```
 
 **Explore a specific module:**

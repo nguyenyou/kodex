@@ -5,7 +5,7 @@ mod common;
 
 use kodex::query::filter;
 use kodex::query::format;
-use kodex::query::symbol::{filter_by_kind, resolve_one, resolve_symbols};
+use kodex::query::symbol::{display_kind, filter_by_kind, matches_kind_filter, resolve_one, resolve_symbols};
 
 fn build_test_index() -> common::TestIndex {
     common::build_and_load_index(common::make_billing_test_docs())
@@ -96,6 +96,99 @@ fn filter_by_kind_none_returns_all() {
     let all = resolve_symbols(index, "Service");
     let filtered = filter_by_kind(&all, None);
     assert_eq!(filtered.len(), all.len());
+}
+
+// ── property-based kind filtering (case-class, enum, class) ────────────────
+
+fn build_property_kind_index() -> common::TestIndex {
+    common::build_and_load_index(common::make_property_kind_docs())
+}
+
+#[test]
+fn filter_by_kind_case_class() {
+    let reader = build_property_kind_index();
+    let index = reader.index();
+    let all: Vec<_> = index.symbols.iter().collect();
+    let case_classes = filter_by_kind(&all, Some("case-class"));
+    assert_eq!(case_classes.len(), 1, "should find exactly one case class");
+    assert_eq!(kodex::query::s(index, case_classes[0].name), "Config");
+}
+
+#[test]
+fn filter_by_kind_enum() {
+    let reader = build_property_kind_index();
+    let index = reader.index();
+    let all: Vec<_> = index.symbols.iter().collect();
+    let enums = filter_by_kind(&all, Some("enum"));
+    assert_eq!(enums.len(), 1, "should find exactly one enum");
+    assert_eq!(kodex::query::s(index, enums[0].name), "Status");
+}
+
+#[test]
+fn filter_by_kind_class_excludes_case_class_and_enum() {
+    let reader = build_property_kind_index();
+    let index = reader.index();
+    let all: Vec<_> = index.symbols.iter().collect();
+    let plain_classes = filter_by_kind(&all, Some("class"));
+    assert_eq!(plain_classes.len(), 1, "should find exactly one plain class");
+    assert_eq!(kodex::query::s(index, plain_classes[0].name), "Engine");
+}
+
+#[test]
+fn matches_kind_filter_case_class() {
+    let reader = build_property_kind_index();
+    let index = reader.index();
+    let config = resolve_symbols(index, "Config");
+    assert!(!config.is_empty());
+    assert!(matches_kind_filter(config[0], "case-class"));
+    assert!(!matches_kind_filter(config[0], "class"), "case class should not match 'class'");
+    assert!(!matches_kind_filter(config[0], "enum"));
+}
+
+#[test]
+fn matches_kind_filter_enum() {
+    let reader = build_property_kind_index();
+    let index = reader.index();
+    let status = resolve_symbols(index, "Status");
+    assert!(!status.is_empty());
+    assert!(matches_kind_filter(status[0], "enum"));
+    assert!(!matches_kind_filter(status[0], "class"), "enum should not match 'class'");
+    assert!(!matches_kind_filter(status[0], "case-class"));
+}
+
+#[test]
+fn matches_kind_filter_plain_class() {
+    let reader = build_property_kind_index();
+    let index = reader.index();
+    let engine = resolve_symbols(index, "Engine");
+    assert!(!engine.is_empty());
+    assert!(matches_kind_filter(engine[0], "class"));
+    assert!(!matches_kind_filter(engine[0], "case-class"));
+    assert!(!matches_kind_filter(engine[0], "enum"));
+}
+
+#[test]
+fn display_kind_case_class() {
+    let reader = build_property_kind_index();
+    let index = reader.index();
+    let config = resolve_symbols(index, "Config");
+    assert_eq!(display_kind(config[0]), "case class");
+}
+
+#[test]
+fn display_kind_enum() {
+    let reader = build_property_kind_index();
+    let index = reader.index();
+    let status = resolve_symbols(index, "Status");
+    assert_eq!(display_kind(status[0]), "enum");
+}
+
+#[test]
+fn display_kind_plain_class() {
+    let reader = build_property_kind_index();
+    let index = reader.index();
+    let engine = resolve_symbols(index, "Engine");
+    assert_eq!(display_kind(engine[0]), "class");
 }
 
 // ── filter functions needing index ──────────────────────────────────────────

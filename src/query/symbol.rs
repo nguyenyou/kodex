@@ -554,7 +554,7 @@ pub fn resolve_one<'a>(
         );
         eprintln!("  Disambiguate with FQN or --kind. Candidates:");
         for sym in candidates.iter().take(5) {
-            eprintln!("    {} {}", kind_str(&sym.kind), s(index, sym.fqn));
+            eprintln!("    {} {}", display_kind(sym), s(index, sym.fqn));
         }
         if candidates.len() > 5 {
             eprintln!("    ... and {} more", candidates.len() - 5);
@@ -590,7 +590,8 @@ pub fn filter_by_kind<'a>(
 /// Check whether a symbol matches a kind filter string.
 ///
 /// Handles property-based kinds like "case-class" and "enum" that combine
-/// the base `SymbolKind` with property bitmask flags.
+/// the base `SymbolKind` with property bitmask flags. `--kind class` is
+/// strict: it excludes case classes and enums so each filter is disjoint.
 #[must_use]
 pub fn matches_kind_filter(sym: &ArchivedSymbol, filter: &str) -> bool {
     let props: u32 = sym.properties.into();
@@ -599,10 +600,36 @@ pub fn matches_kind_filter(sym: &ArchivedSymbol, filter: &str) -> bool {
             matches!(sym.kind, ArchivedSymbolKind::Class) && (props & PROP_CASE != 0)
         }
         "enum" => {
-            matches!(sym.kind, ArchivedSymbolKind::Class) && (props & PROP_ENUM != 0)
+            matches!(
+                sym.kind,
+                ArchivedSymbolKind::Class | ArchivedSymbolKind::Interface
+            ) && (props & PROP_ENUM != 0)
+        }
+        "class" => {
+            matches!(sym.kind, ArchivedSymbolKind::Class)
+                && (props & PROP_CASE == 0)
+                && (props & PROP_ENUM == 0)
         }
         _ => kind_str(&sym.kind).eq_ignore_ascii_case(filter),
     }
+}
+
+/// Property-aware display kind: returns "case class" for case classes,
+/// "enum" for Scala 3 enums, and falls back to the base `kind_str`.
+#[must_use]
+pub fn display_kind(sym: &ArchivedSymbol) -> &'static str {
+    let props: u32 = sym.properties.into();
+    if matches!(sym.kind, ArchivedSymbolKind::Class) && (props & PROP_CASE != 0) {
+        return "case class";
+    }
+    if matches!(
+        sym.kind,
+        ArchivedSymbolKind::Class | ArchivedSymbolKind::Interface
+    ) && (props & PROP_ENUM != 0)
+    {
+        return "enum";
+    }
+    kind_str(&sym.kind)
 }
 
 #[must_use]

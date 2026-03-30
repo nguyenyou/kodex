@@ -6,7 +6,7 @@ use crate::query::format::{
 };
 use crate::query::graph::{filtered_callers, filtered_callees};
 use crate::query::s;
-use crate::query::symbol::{edges_from, find_by_fqn, kind_str};
+use crate::query::symbol::{display_kind, edges_from, find_by_fqn};
 use crate::query::{file_entry, sym as sym_at};
 use std::fmt::Write;
 
@@ -23,7 +23,7 @@ pub fn cmd_info(
 
     let mut out = String::new();
     let name = s(index, sym.name);
-    let kind = kind_str(&sym.kind);
+    let kind = display_kind(sym);
     let sig: &str = s(index, sym.type_signature);
     let file_id: u32 = sym.file_id.into();
     let fe = file_entry(index, file_id);
@@ -87,7 +87,7 @@ pub fn cmd_info(
     let owner_id: u32 = sym.owner.into();
     if owner_id != NONE_ID && (owner_id as usize) < index.symbols.len() {
         let owner = sym_at(index, owner_id);
-        let ok = kind_str(&owner.kind);
+        let ok = display_kind(owner);
         let on = s(index, owner.name);
         let ofqn = s(index, owner.fqn);
         writeln!(out, "  Owner: {ok} {on}").unwrap();
@@ -123,7 +123,7 @@ pub fn cmd_info(
         writeln!(out, "  Overridden by ({}):", overriders.len()).unwrap();
         for oid in overriders {
             let o = sym_at(index, u32::from(*oid));
-            let ok = kind_str(&o.kind);
+            let ok = display_kind(o);
             let on = s(index, o.name);
             let ofqn = s(index, o.fqn);
             let of_id: u32 = o.file_id.into();
@@ -214,7 +214,7 @@ pub fn cmd_info(
             writeln!(out, "  Members ({}):", filtered.len()).unwrap();
             for &mid in &filtered {
                 let m = sym_at(index, mid);
-                let mk = kind_str(&m.kind);
+                let mk = display_kind(m);
                 let mn = s(index, m.name);
                 let mfqn = s(index, m.fqn);
                 let msig = s(index, m.type_signature);
@@ -250,7 +250,7 @@ pub fn cmd_info(
             writeln!(out, "  Implementations ({}):", filtered.len()).unwrap();
             for &sid in &filtered {
                 let st = sym_at(index, sid);
-                let sk = kind_str(&st.kind);
+                let sk = display_kind(st);
                 let sn = s(index, st.name);
                 let sfqn = s(index, st.fqn);
                 let sf_id: u32 = st.file_id.into();
