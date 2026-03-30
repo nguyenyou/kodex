@@ -395,7 +395,7 @@ fn test_is_synthetic_name() {
 fn cmd_search_found() {
     let reader = build_test_index();
     let index = reader.index();
-    let out = kodex::query::commands::search::cmd_search(index, "Service", 50, None, None, &[], true);
+    let out = kodex::query::commands::search::cmd_search(index, Some("Service"), 50, None, None, &[], true);
     assert!(out.is_found());
     assert!(out.output().contains("Service"));
 }
@@ -404,7 +404,7 @@ fn cmd_search_found() {
 fn cmd_search_not_found() {
     let reader = build_test_index();
     let index = reader.index();
-    let out = kodex::query::commands::search::cmd_search(index, "NonExistent", 50, None, None, &[], true);
+    let out = kodex::query::commands::search::cmd_search(index, Some("NonExistent"), 50, None, None, &[], true);
     assert!(!out.is_found());
 }
 
@@ -412,7 +412,7 @@ fn cmd_search_not_found() {
 fn cmd_search_kind_filter() {
     let reader = build_test_index();
     let index = reader.index();
-    let out = kodex::query::commands::search::cmd_search(index, "Service", 50, Some("trait"), None, &[], true);
+    let out = kodex::query::commands::search::cmd_search(index, Some("Service"), 50, Some("trait"), None, &[], true);
     assert!(out.is_found());
     assert!(out.output().contains("trait"));
 }
@@ -422,11 +422,11 @@ fn cmd_search_with_exclude() {
     let reader = build_test_index();
     let index = reader.index();
     // "process" matches methods in both Service and ServiceImpl
-    let out = kodex::query::commands::search::cmd_search(index, "process", 50, None, None, &[], true);
+    let out = kodex::query::commands::search::cmd_search(index, Some("process"), 50, None, None, &[], true);
     assert!(out.is_found());
     // Exclude ServiceImpl — should only show Service's process
     let out = kodex::query::commands::search::cmd_search(
-        index, "process", 50, None, None, &["ServiceImpl".to_string()], true,
+        index, Some("process"), 50, None, None, &["ServiceImpl".to_string()], true,
     );
     assert!(out.is_found());
     assert!(!out.output().contains("ServiceImpl"));
@@ -439,7 +439,7 @@ fn search_multi_match_shows_file_and_line() {
     let reader = build_rich_index();
     let index = reader.index();
     // "speak" matches methods in both Animal (line 4) and Dog (line 5)
-    let out = kodex::query::commands::search::cmd_search(index, "speak", 50, None, None, &[], true);
+    let out = kodex::query::commands::search::cmd_search(index, Some("speak"), 50, None, None, &[], true);
     assert!(out.is_found());
     insta::assert_snapshot!(out.output());
 }
@@ -449,7 +449,7 @@ fn search_single_match_detail_shows_file_and_line() {
     let reader = build_rich_index();
     let index = reader.index();
     // "Animal" with --kind trait → single match, detail view
-    let out = kodex::query::commands::search::cmd_search(index, "Animal", 50, Some("trait"), None, &[], true);
+    let out = kodex::query::commands::search::cmd_search(index, Some("Animal"), 50, Some("trait"), None, &[], true);
     assert!(out.is_found());
     insta::assert_snapshot!(out.output());
 }
@@ -459,7 +459,7 @@ fn search_single_match_method_shows_line_range() {
     let reader = build_rich_index();
     let index = reader.index();
     // "bark" → single method, should show line-end_line range
-    let out = kodex::query::commands::search::cmd_search(index, "bark", 50, None, None, &[], true);
+    let out = kodex::query::commands::search::cmd_search(index, Some("bark"), 50, None, None, &[], true);
     assert!(out.is_found());
     insta::assert_snapshot!(out.output());
 }
@@ -546,7 +546,7 @@ fn build_val_vs_def_index() -> common::TestIndex {
 fn search_finds_both_val_and_def_methods() {
     let reader = build_val_vs_def_index();
     let index = reader.index();
-    let out = kodex::query::commands::search::cmd_search(index, "createOrder", 50, None, None, &[], true);
+    let out = kodex::query::commands::search::cmd_search(index, Some("createOrder"), 50, None, None, &[], true);
     assert!(out.is_found());
     // Must find BOTH the val endpoint AND the def method
     assert!(
@@ -597,10 +597,10 @@ fn cmd_search_excludes_generated_by_default() {
         common::build_and_load_index(common::make_billing_with_generated_docs());
     let index = reader.index();
     // Generated files are excluded from search results by default
-    let out = kodex::query::commands::search::cmd_search(index, "ServiceProto", 50, None, None, &[], false);
+    let out = kodex::query::commands::search::cmd_search(index, Some("ServiceProto"), 50, None, None, &[], false);
     assert!(!out.is_found());
     // But included when include_noise is true
-    let out = kodex::query::commands::search::cmd_search(index, "ServiceProto", 50, None, None, &[], true);
+    let out = kodex::query::commands::search::cmd_search(index, Some("ServiceProto"), 50, None, None, &[], true);
     assert!(out.is_found());
 }
 
@@ -975,5 +975,126 @@ fn rich_ambiguity_prefers_type_over_method() {
     // Both are methods, so ranking doesn't change order, but resolve_one should still work
     let result = resolve_one(index, "speak", None, None);
     assert!(result.is_some());
+}
+
+// ── Feature #4: search with --module only (no query) ───────────────────────
+
+#[test]
+fn cmd_search_module_only_returns_all_symbols_in_module() {
+    let reader = build_rich_index();
+    let index = reader.index();
+    // Search by module only, no query
+    let out = kodex::query::commands::search::cmd_search(
+        index, None, 50, None, Some("core"), &[], true,
+    );
+    assert!(out.is_found());
+    // Should find symbols from modules.core: Animal, Dog, speak, bark
+    assert!(out.output().contains("Animal"), "should contain Animal: {}", out.output());
+    assert!(out.output().contains("Dog"), "should contain Dog: {}", out.output());
+}
+
+#[test]
+fn cmd_search_module_only_with_kind_filter() {
+    let reader = build_rich_index();
+    let index = reader.index();
+    // Search by module + kind, no query
+    let out = kodex::query::commands::search::cmd_search(
+        index, None, 50, Some("trait"), Some("core"), &[], true,
+    );
+    assert!(out.is_found());
+    // Should find Animal trait from modules.core
+    assert!(out.output().contains("Animal"), "should contain Animal trait: {}", out.output());
+    // Should NOT contain Dog (it's a class, not a trait)
+    assert!(!out.output().contains("class Dog"), "should not contain Dog class: {}", out.output());
+}
+
+#[test]
+fn cmd_search_module_only_nonexistent_module() {
+    let reader = build_rich_index();
+    let index = reader.index();
+    let out = kodex::query::commands::search::cmd_search(
+        index, None, 50, None, Some("nonexistent_module_xyz"), &[], true,
+    );
+    assert!(!out.is_found());
+    assert!(out.output().contains("No symbols in module"), "should report no symbols: {}", out.output());
+}
+
+#[test]
+fn cmd_search_module_only_with_kind_no_match() {
+    let reader = build_rich_index();
+    let index = reader.index();
+    // modules.app has PetStore (object) and adopt/name (methods), no traits
+    let out = kodex::query::commands::search::cmd_search(
+        index, None, 50, Some("trait"), Some("app"), &[], true,
+    );
+    assert!(!out.is_found());
+    assert!(out.output().contains("No trait symbols in module"), "should report no trait: {}", out.output());
+}
+
+#[test]
+fn cmd_search_module_only_respects_limit() {
+    let reader = build_rich_index();
+    let index = reader.index();
+    // modules.core has multiple symbols; limit to 2
+    let out = kodex::query::commands::search::cmd_search(
+        index, None, 2, None, Some("core"), &[], true,
+    );
+    assert!(out.is_found());
+    assert!(out.output().contains("... and"), "should show truncation message: {}", out.output());
+}
+
+// ── Feature #5: kind-aware suggestions ─────────────────────────────────────
+
+#[test]
+fn cmd_search_kind_mismatch_suggests_other_kinds() {
+    let reader = build_rich_index();
+    let index = reader.index();
+    // "Dog" exists as a class, not a trait. Searching with --kind trait should suggest.
+    let out = kodex::query::commands::search::cmd_search(
+        index, Some("Dog"), 50, Some("trait"), None, &[], true,
+    );
+    assert!(!out.is_found());
+    assert!(out.output().contains("No trait found matching 'Dog'"), "should say no trait found: {}", out.output());
+    assert!(out.output().contains("Found under other kinds"), "should suggest other kinds: {}", out.output());
+    assert!(out.output().contains("class Dog"), "should show Dog as class: {}", out.output());
+}
+
+#[test]
+fn cmd_search_kind_mismatch_no_match_at_all() {
+    let reader = build_rich_index();
+    let index = reader.index();
+    // "ZZZZZ" doesn't exist at all — should get standard not-found, no kind suggestions
+    let out = kodex::query::commands::search::cmd_search(
+        index, Some("ZZZZZ"), 50, Some("trait"), None, &[], true,
+    );
+    assert!(!out.is_found());
+    assert!(out.output().contains("Not found"), "should be not found: {}", out.output());
+    assert!(!out.output().contains("Found under other kinds"), "should not suggest other kinds: {}", out.output());
+}
+
+#[test]
+fn cmd_search_kind_match_still_works() {
+    let reader = build_rich_index();
+    let index = reader.index();
+    // "Animal" exists as a trait — searching with --kind trait should find it normally
+    let out = kodex::query::commands::search::cmd_search(
+        index, Some("Animal"), 50, Some("trait"), None, &[], true,
+    );
+    assert!(out.is_found());
+    assert!(out.output().contains("Animal"), "should find Animal: {}", out.output());
+}
+
+#[test]
+fn cmd_search_kind_filter_strict_returns_only_matching_kind() {
+    let reader = build_rich_index();
+    let index = reader.index();
+    // "speak" matches methods. Searching with --kind class should NOT fall back to methods.
+    let out = kodex::query::commands::search::cmd_search(
+        index, Some("speak"), 50, Some("class"), None, &[], true,
+    );
+    assert!(!out.is_found());
+    // Should suggest the methods under "Found under other kinds"
+    assert!(out.output().contains("Found under other kinds"), "should suggest methods: {}", out.output());
+    assert!(out.output().contains("method speak"), "should show speak as method: {}", out.output());
 }
 

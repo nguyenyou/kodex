@@ -1,7 +1,7 @@
 use super::CommandResult;
 use crate::model::ArchivedKodexIndex;
 use crate::query::format::{format_symbol_detail, format_symbol_line};
-use crate::query::symbol::resolve_filtered;
+use crate::query::symbol::{resolve_filtered, list_module_symbols};
 use std::fmt::Write;
 
 /// Search for symbol definitions.
@@ -32,30 +32,38 @@ use std::fmt::Write;
 /// For scored steps (CamelCase, fuzzy), match quality is primary, composite is tiebreaker.
 pub fn cmd_search(
     index: &ArchivedKodexIndex,
-    query: &str,
+    query: Option<&str>,
     limit: usize,
     kind_filter: Option<&str>,
     module_filter: Option<&str>,
     exclude: &[String],
     include_noise: bool,
 ) -> CommandResult {
-    let mut candidates = resolve_filtered(index, query, kind_filter, module_filter);
+    // Module-only mode: list all symbols in the module
+    let mut candidates = if let Some(q) = query {
+        resolve_filtered(index, q, kind_filter, module_filter)
+    } else {
+        // query is None — module_filter is guaranteed by caller
+        let module_pattern = module_filter.expect("--module required when query is omitted");
+        list_module_symbols(index, module_pattern, kind_filter)
+    };
+
     if candidates.is_empty() {
-        return CommandResult::symbol_not_found(index, query);
+        return not_found_message(index, query, kind_filter, module_filter);
     }
 
     // Baseline noise filter: exclude generated, test, stdlib, plumbing symbols
     if !include_noise {
         candidates.retain(|sym| !crate::query::filter::is_noise(index, sym));
         if candidates.is_empty() {
-            return CommandResult::symbol_not_found(index, query);
+            return not_found_message(index, query, kind_filter, module_filter);
         }
     }
 
     if !exclude.is_empty() {
         candidates.retain(|sym| !crate::query::filter::matches_exclude(index, sym, exclude));
         if candidates.is_empty() {
-            return CommandResult::symbol_not_found(index, query);
+            return not_found_message(index, query, kind_filter, module_filter);
         }
     }
 
@@ -68,7 +76,13 @@ pub fn cmd_search(
         )
         .unwrap();
     } else {
-        writeln!(out, "{} symbols matching '{query}'", candidates.len()).unwrap();
+        let label = match (query, module_filter) {
+            (Some(q), Some(m)) => format!("symbols matching '{q}' in module '{m}'"),
+            (Some(q), None) => format!("symbols matching '{q}'"),
+            (None, Some(m)) => format!("symbols in module '{m}'"),
+            (None, None) => "symbols".to_string(),
+        };
+        writeln!(out, "{} {label}", candidates.len()).unwrap();
         let effective_limit = if limit == 0 { candidates.len() } else { limit };
         for s in candidates.iter().take(effective_limit) {
             writeln!(out, "{}", format_symbol_line(index, s)).unwrap();
@@ -83,4 +97,51 @@ pub fn cmd_search(
         }
     }
     CommandResult::Found(out)
+}
+
+/// Build an appropriate not-found message, with kind-aware suggestions when applicable.
+fn not_found_message(
+    index: &ArchivedKodexIndex,
+    query: Option<&str>,
+    kind_filter: Option<&str>,
+    module_filter: Option<&str>,
+) -> CommandResult {
+    // Feature #5: kind-aware suggestions
+    // When --kind was specified but yielded no results, check if the query matches
+    // symbols of other kinds and suggest those.
+    if let (Some(q), Some(kind)) = (query, kind_filter) {
+        let without_kind = resolve_filtered(index, q, None, module_filter);
+        // Filter noise out of suggestions too
+        let suggestions: Vec<_> = without_kind
+            .into_iter()
+            .filter(|sym| !crate::query::filter::is_noise(index, sym))
+            .collect();
+        if !suggestions.is_empty() {
+            let mut out = format!("Not found: No {kind} found matching '{q}'\n");
+            out.push_str("Found under other kinds:\n");
+            let show_limit = suggestions.len().min(10);
+            for s in suggestions.iter().take(show_limit) {
+                writeln!(out, "{}", format_symbol_line(index, s)).unwrap();
+            }
+            if suggestions.len() > show_limit {
+                writeln!(out, "  ... and {} more", suggestions.len() - show_limit).unwrap();
+            }
+            return CommandResult::NotFound(out);
+        }
+    }
+
+    // Module-only mode not-found
+    if query.is_none() {
+        if let Some(m) = module_filter {
+            let msg = if let Some(kind) = kind_filter {
+                format!("Not found: No {kind} symbols in module '{m}'\n")
+            } else {
+                format!("Not found: No symbols in module '{m}'\n")
+            };
+            return CommandResult::NotFound(msg);
+        }
+    }
+
+    // Default: standard not-found with fuzzy suggestions
+    CommandResult::symbol_not_found(index, query.unwrap_or(""))
 }

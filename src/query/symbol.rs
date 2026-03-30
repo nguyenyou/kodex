@@ -496,15 +496,11 @@ pub fn resolve_filtered<'a>(
     if candidates.is_empty() {
         return vec![];
     }
-    // Apply kind filter in-place — avoids cloning when no filter is set
+    // Apply kind filter strictly — return empty if no symbols match the requested kind
     if let Some(k) = kind_filter {
-        let filtered: Vec<_> = candidates
-            .iter()
-            .filter(|sym| kind_str(&sym.kind).eq_ignore_ascii_case(k))
-            .copied()
-            .collect();
-        if !filtered.is_empty() {
-            candidates = filtered;
+        candidates.retain(|sym| kind_str(&sym.kind).eq_ignore_ascii_case(k));
+        if candidates.is_empty() {
+            return vec![];
         }
     }
     if let Some(mp) = module_filter {
@@ -515,6 +511,33 @@ pub fn resolve_filtered<'a>(
             candidates = by_mod;
         }
     }
+    candidates
+}
+
+/// List all symbols belonging to a module (with optional kind filter).
+/// Used for module-only search when no query is provided.
+#[must_use]
+pub fn list_module_symbols<'a>(
+    index: &'a ArchivedKodexIndex,
+    module_pattern: &str,
+    kind_filter: Option<&str>,
+) -> Vec<&'a ArchivedSymbol> {
+    let all_symbols: Vec<&ArchivedSymbol> = index.symbols.iter().collect();
+    let mut candidates = crate::query::filter::filter_by_module(index, &all_symbols, module_pattern);
+    if let Some(k) = kind_filter {
+        candidates.retain(|sym| kind_str(&sym.kind).eq_ignore_ascii_case(k));
+    }
+    // Filter out parameters, type parameters, locals, self parameters
+    candidates.retain(|sym| {
+        !matches!(
+            sym.kind,
+            ArchivedSymbolKind::Parameter
+                | ArchivedSymbolKind::TypeParameter
+                | ArchivedSymbolKind::SelfParameter
+                | ArchivedSymbolKind::Local
+        )
+    });
+    smart_rank(&mut candidates, index);
     candidates
 }
 

@@ -45,8 +45,8 @@ impl SymbolKindArg {
 /// Common arguments for symbol query commands.
 #[derive(Args)]
 struct QueryArgs {
-    /// Symbol name, FQN, or FQN suffix to search for
-    query: String,
+    /// Symbol name, FQN, or FQN suffix to search for (optional when --module is provided)
+    query: Option<String>,
     /// Filter by symbol kind
     #[arg(long)]
     kind: Option<SymbolKindArg>,
@@ -161,11 +161,14 @@ fn run() -> anyhow::Result<()> {
         }
 
         Command::Search { q, limit, excl } => {
+            if q.query.is_none() && q.module.is_none() {
+                anyhow::bail!("Either <QUERY> or --module must be provided");
+            }
             let reader = open_index(cli.idx.as_deref())?;
             let exclude = resolve_exclude(&excl, reader.index());
             emit(query::commands::search::cmd_search(
                 reader.index(),
-                &q.query,
+                q.query.as_deref(),
                 limit,
                 q.kind.as_ref().map(SymbolKindArg::as_str),
                 q.module.as_deref(),
