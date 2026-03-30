@@ -604,11 +604,15 @@ pub fn matches_kind_filter(sym: &ArchivedSymbol, filter: &str) -> bool {
                 sym.kind,
                 ArchivedSymbolKind::Class | ArchivedSymbolKind::Interface
             ) && (props & PROP_ENUM != 0)
+                && (props & PROP_CASE == 0)
         }
         "class" => {
             matches!(sym.kind, ArchivedSymbolKind::Class)
                 && (props & PROP_CASE == 0)
                 && (props & PROP_ENUM == 0)
+        }
+        "interface" => {
+            matches!(sym.kind, ArchivedSymbolKind::Interface) && (props & PROP_ENUM == 0)
         }
         _ => kind_str(&sym.kind).eq_ignore_ascii_case(filter),
     }
