@@ -250,6 +250,7 @@ method createOrder [modules.orders.orders.jvm] — src/com/example/OrderService.
 ```bash
 kodex calls '<FQN>' --depth 3              # downstream (callees)
 kodex calls '<FQN>' -r --depth 3           # upstream (callers)
+kodex calls '<FQN>' --cross-module-only    # only cross-module edges
 ```
 
 Recursive call tree with box-drawing connectors:
@@ -263,6 +264,16 @@ createOrder [modules.orders.orders.jvm]
 └── EventBus.publish [modules.events.events.jvm] — cross-module
 ```
 
+**`--cross-module-only`:** Filters the tree to show only edges that cross module boundaries — hides all intra-module calls. Useful for getting an architectural overview of a method's external dependencies:
+```
+kodex calls 'com/example/Service#create().' --depth 2 --cross-module-only
+
+create [modules.myapp]
+├── EntityVerification.verify [platform.entity] — cross-module
+├── FileService.createFolder [platform.document] — cross-module
+└── BillingOps.checkPlan [platform.billing] — cross-module
+```
+
 **Reading the output:**
 - Indentation = call depth
 - `— cross-module — module.name` = call crosses a module boundary
@@ -274,10 +285,54 @@ createOrder [modules.orders.orders.jvm]
 **Flags:**
 - `--depth N`: default 3
 - `-r, --reverse`: walk callers instead of callees
+- `--cross-module-only`: only show edges crossing module boundaries
 - `--include-noise`: include noise — excluded by default
 - `--exclude "p1,p2"`: manual exclusion patterns
 
 Use `calls` when `info`'s depth-1 preview (capped at 50) isn't enough.
+
+### `trace` — call tree with info-level detail
+
+```bash
+kodex trace '<FQN>' --depth 3              # downstream with source
+kodex trace '<FQN>' -r --depth 2           # upstream with source
+kodex trace '<FQN>' --cross-module-only    # only cross-module, with source
+```
+
+Like `calls` but shows **full info-level detail** (kind, FQN, signature, source code) at each node — like running `info` recursively down the call chain. Ideal for understanding complete execution flows without manual copy-paste chaining of `info` calls.
+
+```
+method Service.create [modules.myapp] — src/com/example/Service.scala:45-78
+  fqn: com/example/Service#create().
+  sig: method create(params: CreateParams): Task[Response]
+    45 | def create(params: CreateParams) = {
+    46 |   for {
+    47 |     _ <- verify(params)
+    ...
+
+  └── method Repo.save [modules.data] — cross-module — src/com/example/Repo.scala:12
+        fqn: com/example/Repo#save().
+        sig: method save(record: Record): Task[Unit]
+          12 | def save(record: Record) = { ... }
+```
+
+**What each node shows:**
+- Kind + owner.name + module tag + file location (header)
+- FQN (for copy-paste into further queries)
+- Signature (type signature)
+- Source code (first 10 lines — enough to understand intent without flooding context)
+
+**Flags:**
+- `--depth N`: default 3
+- `-r, --reverse`: walk callers instead of callees
+- `--cross-module-only`: only show edges crossing module boundaries
+- `--include-noise`: include noise — excluded by default
+- `--exclude "p1,p2"`: manual exclusion patterns
+
+**When to use `trace` vs `calls` vs `info`:**
+- `info` — deep detail on **one** symbol (members, overrides, implementations, full source)
+- `calls` — compact tree of names across many levels
+- `trace` — rich detail across multiple levels, best for understanding execution flows end-to-end
 
 ### `refs` — where is a symbol used?
 
@@ -363,10 +418,11 @@ kodex search Query --include-noise
 | `--kind K` | search | all | class, trait, object, method, field, type, constructor |
 | `--module M` | search | all | Substring or dotted segment match on module name |
 | `--limit N` | search, refs, noise | 50 / 100 / 15 | Max results (0=unlimited) |
-| `--depth N` | calls | 3 | Call tree recursion depth |
-| `-r, --reverse` | calls | off | Walk callers instead of callees |
-| `--include-noise` | search, info, calls | off | Include noise — excluded by default |
-| `--exclude P` | search, info, calls | — | Manual comma-separated exclusion patterns |
+| `--depth N` | calls, trace | 3 | Call tree recursion depth |
+| `-r, --reverse` | calls, trace | off | Walk callers instead of callees |
+| `--cross-module-only` | calls, trace | off | Only show edges crossing module boundaries |
+| `--include-noise` | search, info, calls, trace | off | Include noise — excluded by default |
+| `--exclude P` | search, info, calls, trace | — | Manual comma-separated exclusion patterns |
 | `--root PATH` | index | `.` | Workspace root |
 | `--idx PATH` | all | `.scalex/kodex.idx` | Override index path (or `KODEX_IDX` env var) |
 
@@ -384,6 +440,19 @@ kodex info 'com/example/MainService#'
 kodex search createOrder
 kodex info 'com/example/Service#createOrder().'
 kodex calls 'com/example/Service#createOrder().' --depth 3
+```
+
+**Trace a complete execution flow with source code:**
+```bash
+kodex trace 'com/example/Service#createOrder().' --depth 3
+# Shows FQN + signature + source at each node — no need to chain info calls
+```
+
+**See only external dependencies (architectural view):**
+```bash
+kodex calls 'com/example/Service#createOrder().' --cross-module-only
+# Or with full source detail:
+kodex trace 'com/example/Service#createOrder().' --depth 2 --cross-module-only
 ```
 
 **Assess change risk ("what breaks if I change X?"):**
