@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [1.3.0] — 2026-03-30
+
 ### Changed
 - All commands now always exit with code 0 — errors (unknown flags, missing index, bad arguments) are printed to stdout as values instead of causing non-zero exits. This prevents cascading failures when LLM agents run multiple kodex commands in parallel (fixes #10).
 
