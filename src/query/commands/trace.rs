@@ -41,7 +41,7 @@ pub fn cmd_trace(
     };
     print_trace_tree(&mut out, &ctx, sym_id, 1, &mut visited);
 
-    // Empty tree hint
+    // Empty tree hint with FQN and file location
     if visited.len() == 1 {
         let label = if cross_module_only {
             if reverse { "cross-module callers" } else { "cross-module callees" }
@@ -50,7 +50,8 @@ pub fn cmd_trace(
         } else {
             "callees"
         };
-        writeln!(out, "(no {label} found)").unwrap();
+        let loc = format_file_location(index, sym);
+        writeln!(out, "(no {label} found for {} at {loc})", s(index, sym.fqn)).unwrap();
     }
 
     CommandResult::Found(out)
@@ -84,11 +85,13 @@ fn print_trace_tree(
     let mut filtered = filtered_neighbors(ctx.index, edge_list, sym_id, ctx.exclude);
 
     if ctx.cross_module_only {
+        let parent_file_id: u32 = sym_at(ctx.index, sym_id).file_id.into();
+        let parent_mod: u32 = file_entry(ctx.index, parent_file_id).module_id.into();
         filtered.retain(|&cid| {
             let c = sym_at(ctx.index, cid);
             let cf_id: u32 = c.file_id.into();
             let neighbor_mod: u32 = file_entry(ctx.index, cf_id).module_id.into();
-            neighbor_mod != ctx.root_mod && neighbor_mod != NONE_ID && ctx.root_mod != NONE_ID
+            neighbor_mod != parent_mod && neighbor_mod != NONE_ID && parent_mod != NONE_ID
         });
     }
 
@@ -101,11 +104,18 @@ fn print_trace_tree(
         let tree_prefix = format!("{prefix}{branch}");
         let cont_prefix = format!("{prefix}{cont}");
 
-        render_node(out, ctx.index, cid, ctx.root_mod, &tree_prefix, &cont_prefix);
-
-        if visited.insert(cid) {
-            print_trace_tree(out, ctx, cid, depth + 1, visited);
+        if !visited.insert(cid) {
+            // Already visited — show one-line cycle indicator, skip full info block
+            let c = sym_at(ctx.index, cid);
+            let name = s(ctx.index, c.name);
+            let on = owner_name(ctx.index, c);
+            let owner = if on.is_empty() { String::new() } else { format!("{on}.") };
+            writeln!(out, "{tree_prefix}{owner}{name} (cycle detected)").unwrap();
+            continue;
         }
+
+        render_node(out, ctx.index, cid, ctx.root_mod, &tree_prefix, &cont_prefix);
+        print_trace_tree(out, ctx, cid, depth + 1, visited);
     }
 }
 
@@ -162,13 +172,13 @@ fn render_node(
             for (i, &ln) in lines[start..end].iter().enumerate() {
                 writeln!(out, "{cont_prefix}  {:>4} | {}", start + i + 1, ln).unwrap();
             }
-            let total = if end_line != NONE_ID && end_line > line {
-                end_line as usize + 1 - start
-            } else {
-                0
-            };
-            if total > 10 {
-                writeln!(out, "{cont_prefix}  ... ({total} lines total, showing first 10)").unwrap();
+            if end_line != NONE_ID && end_line > line {
+                let total = end_line as usize + 1 - start;
+                if total > 10 {
+                    writeln!(out, "{cont_prefix}  ... ({total} lines total, showing first 10)").unwrap();
+                }
+            } else if end == start + 10 && end < lines.len() {
+                writeln!(out, "{cont_prefix}  ... (truncated)").unwrap();
             }
         }
     }
