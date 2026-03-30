@@ -1,7 +1,7 @@
 use super::CommandResult;
 use crate::model::{ArchivedKodexIndex, NONE_ID};
 use crate::query::format::{format_file_location, module_tag, owner_name};
-use crate::query::graph::filtered_neighbors;
+use crate::query::graph::{filtered_neighbors, retain_cross_module};
 use crate::query::symbol::{find_by_fqn, kind_str};
 use crate::query::{file_entry, s, sym as sym_at};
 use std::fmt::Write;
@@ -85,14 +85,7 @@ fn print_trace_tree(
     let mut filtered = filtered_neighbors(ctx.index, edge_list, sym_id, ctx.exclude);
 
     if ctx.cross_module_only {
-        let parent_file_id: u32 = sym_at(ctx.index, sym_id).file_id.into();
-        let parent_mod: u32 = file_entry(ctx.index, parent_file_id).module_id.into();
-        filtered.retain(|&cid| {
-            let c = sym_at(ctx.index, cid);
-            let cf_id: u32 = c.file_id.into();
-            let neighbor_mod: u32 = file_entry(ctx.index, cf_id).module_id.into();
-            neighbor_mod != parent_mod && neighbor_mod != NONE_ID && parent_mod != NONE_ID
-        });
+        retain_cross_module(ctx.index, &mut filtered, sym_id);
     }
 
     for (i, &cid) in filtered.iter().enumerate() {

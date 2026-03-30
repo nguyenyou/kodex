@@ -1,5 +1,5 @@
-use super::{filter, s, sym as sym_at};
-use crate::model::{ArchivedKodexIndex, ArchivedSymbol};
+use super::{file_entry, filter, s, sym as sym_at};
+use crate::model::{ArchivedKodexIndex, ArchivedSymbol, NONE_ID};
 use crate::query::symbol::{edges_from, find_by_fqn};
 
 /// Collect all callers of a symbol, including callers of overridden base methods.
@@ -60,6 +60,22 @@ pub fn filtered_callees(
                 && !filter::matches_exclude(index, callee, exclude)
         })
         .collect()
+}
+
+/// Remove neighbors that belong to the same module as `parent_sym_id`.
+/// Used by `--cross-module-only` in calls/trace commands.
+pub fn retain_cross_module(
+    index: &ArchivedKodexIndex,
+    neighbors: &mut Vec<u32>,
+    parent_sym_id: u32,
+) {
+    let parent_file_id: u32 = sym_at(index, parent_sym_id).file_id.into();
+    let parent_mod: u32 = file_entry(index, parent_file_id).module_id.into();
+    neighbors.retain(|&cid| {
+        let cf_id: u32 = sym_at(index, cid).file_id.into();
+        let neighbor_mod: u32 = file_entry(index, cf_id).module_id.into();
+        neighbor_mod != parent_mod && neighbor_mod != NONE_ID && parent_mod != NONE_ID
+    });
 }
 
 /// Return filtered neighbors (callers or callees) for a symbol from a given edge list.

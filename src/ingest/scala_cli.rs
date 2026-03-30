@@ -14,7 +14,10 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use walkdir::WalkDir;
 
-use super::provider::{BuildMetadata, BuildProvider, DiscoveredFile, DiscoveryResult, ModuleInfo};
+use super::provider::{
+    collect_semanticdb_files, find_ancestor_named, path_contains_component, BuildMetadata,
+    BuildProvider, DiscoveredFile, DiscoveryResult, ModuleInfo,
+};
 
 pub struct ScalaCliProvider;
 
@@ -51,20 +54,7 @@ impl BuildProvider for ScalaCliProvider {
         let files: Vec<DiscoveredFile> = sdb_dirs
             .iter()
             .flat_map(|(dir, module_segments, _)| {
-                WalkDir::new(dir)
-                    .into_iter()
-                    .filter_map(std::result::Result::ok)
-                    .filter(|e| e.file_type().is_file())
-                    .filter(|e| {
-                        e.path()
-                            .extension()
-                            .is_some_and(|ext| ext.eq_ignore_ascii_case("semanticdb"))
-                    })
-                    .map(|e| DiscoveredFile {
-                        path: e.into_path(),
-                        module_segments: module_segments.clone(),
-                    })
-                    .collect::<Vec<_>>()
+                collect_semanticdb_files(dir, module_segments)
             })
             .collect();
 
@@ -197,22 +187,6 @@ fn extract_scala_cli_info(root: &Path, sdb_dir: &Path) -> Option<(String, bool)>
     Some((module_segments, is_test))
 }
 
-/// Check if any path component equals the given name.
-fn path_contains_component(path: &Path, name: &str) -> bool {
-    path.iter().any(|c| c == name)
-}
-
-/// Walk up from `path` to find the nearest ancestor with the given name.
-fn find_ancestor_named(path: &Path, name: &str) -> Option<PathBuf> {
-    let mut current = path;
-    while let Some(parent) = current.parent() {
-        if parent.file_name().is_some_and(|n| n == name) {
-            return Some(parent.to_path_buf());
-        }
-        current = parent;
-    }
-    None
-}
 
 /// Try to find a Scala version from scala-cli build artifacts.
 /// Looks for directory names like `scala-3.6.4` or parses from bloop JSON.

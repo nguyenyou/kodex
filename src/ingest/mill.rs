@@ -9,7 +9,10 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use walkdir::WalkDir;
 
-use super::provider::{BuildMetadata, BuildProvider, DiscoveredFile, DiscoveryResult, ModuleInfo};
+use super::provider::{
+    collect_semanticdb_files, BuildMetadata, BuildProvider, DiscoveredFile, DiscoveryResult,
+    ModuleInfo,
+};
 
 // ── Provider ───────────────────────────────────────────────────────────────
 
@@ -54,20 +57,7 @@ impl BuildProvider for MillProvider {
         let files: Vec<DiscoveredFile> = sdb_dirs
             .par_iter()
             .flat_map(|(dir, module_segments, _)| {
-                WalkDir::new(dir)
-                    .into_iter()
-                    .filter_map(std::result::Result::ok)
-                    .filter(|e| e.file_type().is_file())
-                    .filter(|e| {
-                        e.path()
-                            .extension()
-                            .is_some_and(|ext| ext.eq_ignore_ascii_case("semanticdb"))
-                    })
-                    .map(|e| DiscoveredFile {
-                        path: e.into_path(),
-                        module_segments: module_segments.clone(),
-                    })
-                    .collect::<Vec<_>>()
+                collect_semanticdb_files(dir, module_segments)
             })
             .collect();
 
@@ -75,21 +65,7 @@ impl BuildProvider for MillProvider {
         let fallback_dir = out_dir.join("META-INF/semanticdb");
         let mut all_files = files;
         if fallback_dir.exists() {
-            let fallback_files: Vec<DiscoveredFile> = WalkDir::new(&fallback_dir)
-                .into_iter()
-                .filter_map(std::result::Result::ok)
-                .filter(|e| e.file_type().is_file())
-                .filter(|e| {
-                    e.path()
-                        .extension()
-                        .is_some_and(|ext| ext.eq_ignore_ascii_case("semanticdb"))
-                })
-                .map(|e| DiscoveredFile {
-                    path: e.into_path(),
-                    module_segments: String::new(),
-                })
-                .collect();
-            all_files.extend(fallback_files);
+            all_files.extend(collect_semanticdb_files(&fallback_dir, ""));
         }
 
         Ok(DiscoveryResult {
@@ -263,9 +239,8 @@ fn read_upstream_module_deps(
 ///
 /// Returns pairs of (out_prefix, canonical_prefix) as workspace-relative paths.
 fn build_shared_source_rewrites(modules: &[ModuleInfo], out_dir: &Path) -> Vec<(String, String)> {
-    let root = match out_dir.parent() {
-        Some(r) => r,
-        None => return vec![],
+    let Some(root) = out_dir.parent() else {
+        return vec![];
     };
 
     // Collect all real source paths that are NOT inside out/ across all modules.
@@ -284,9 +259,8 @@ fn build_shared_source_rewrites(modules: &[ModuleInfo], out_dir: &Path) -> Vec<(
         for gen_path in &m.generated_source_paths {
             // Only process generated sources that live inside out/.
             // Canonicalize to handle macOS symlinks (/private/var vs /var).
-            let gen_abs = match Path::new(gen_path).canonicalize() {
-                Ok(p) => p,
-                Err(_) => continue,
+            let Ok(gen_abs) = Path::new(gen_path).canonicalize() else {
+                continue;
             };
             if !gen_abs.starts_with(out_dir) {
                 continue;
@@ -295,9 +269,8 @@ fn build_shared_source_rewrites(modules: &[ModuleInfo], out_dir: &Path) -> Vec<(
                 continue;
             }
             for &canonical in &canonical_source_dirs {
-                let canonical_abs = match Path::new(canonical).canonicalize() {
-                    Ok(p) => p,
-                    Err(_) => continue,
+                let Ok(canonical_abs) = Path::new(canonical).canonicalize() else {
+                    continue;
                 };
                 if !canonical_abs.is_dir() {
                     continue;
@@ -384,7 +357,7 @@ fn read_resolved_mvn_deps(dir: &Path) -> Vec<String> {
 /// or:          `.../artifactory/<repo>/<group-dirs>/<artifact>/<version>/<artifact>-<version>.jar`
 fn parse_qref_to_coordinate(entry: &str) -> Option<String> {
     // Strip "qref:v1:hash:" prefix to get the path
-    let path = entry.split(':').last()?;
+    let path = entry.split(':').next_back()?;
     let parts: Vec<&str> = path.split('/').collect();
     if parts.len() < 4 {
         return None;

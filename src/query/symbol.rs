@@ -54,7 +54,7 @@ fn ranking_score(sym: &ArchivedSymbol, index: &ArchivedKodexIndex, ref_counts: &
 }
 
 /// Smart ranking: sort symbols by composite score (kind + source type + popularity + name length).
-fn smart_rank<'a>(results: &mut [&'a ArchivedSymbol], index: &ArchivedKodexIndex) {
+fn smart_rank(results: &mut [&ArchivedSymbol], index: &ArchivedKodexIndex) {
     if results.len() <= 1 {
         return;
     }
@@ -250,30 +250,10 @@ pub fn resolve_symbols<'a>(index: &'a ArchivedKodexIndex, query: &str) -> Vec<&'
     let max_dist = fuzzy_threshold(query.len());
     let mut fuzzy: Vec<(&ArchivedSymbol, usize)> = Vec::new();
     let hash_size: u32 = index.name_hash_size.into();
-    if max_dist > 0 && hash_size > 0 {
-        let mut dl_buf = vec![0usize; 3 * (query_lower.len() + 1)];
-        let mut name_buf = String::new();
-        for bucket in index.name_hash_buckets.iter() {
-            for sid in bucket.symbol_ids.iter() {
-                let sid_val: u32 = (*sid).into();
-                let name = s(index, sym(index, sid_val).name);
-                name_buf.clear();
-                name_buf.extend(name.chars().map(|c| c.to_ascii_lowercase()));
-                // Early rejection: length difference alone exceeds threshold
-                let len_diff = query_lower.len().abs_diff(name_buf.len());
-                if len_diff > max_dist {
-                    continue;
-                }
-                let dist = damerau_levenshtein_buffered(&query_lower, &name_buf, &mut dl_buf);
-                if dist > 0 && dist <= max_dist {
-                    // Meaningfulness guard: suppress if more than half the chars are wrong
-                    if dist * 2 > query_lower.len().max(name_buf.len()) {
-                        continue;
-                    }
-                    fuzzy.push((sym(index, sid_val), dist));
-                }
-            }
-        }
+    if hash_size > 0 {
+        fuzzy_scan(index, &query_lower, max_dist, |sid, _name, dist| {
+            fuzzy.push((sym(index, sid), dist));
+        });
     }
     if !fuzzy.is_empty() {
         fuzzy.sort_by_key(|&(sym, _)| u32::from(sym.id));
@@ -669,6 +649,42 @@ fn fuzzy_threshold(query_len: usize) -> usize {
     std::cmp::min(std::cmp::max(query_len, 3) / 3, 5)
 }
 
+/// Scan the name-hash index for fuzzy (Damerau-Levenshtein) matches.
+///
+/// For each match within `max_dist`, calls `on_match(symbol_id, lowercase_name, distance)`.
+/// Callers provide their own closure to collect results in the form they need.
+fn fuzzy_scan(
+    index: &ArchivedKodexIndex,
+    query_lower: &str,
+    max_dist: usize,
+    mut on_match: impl FnMut(u32, &str, usize),
+) {
+    if max_dist == 0 {
+        return;
+    }
+    let mut dl_buf = vec![0usize; 3 * (query_lower.len() + 1)];
+    let mut name_buf = String::new();
+    for bucket in index.name_hash_buckets.iter() {
+        for sid in bucket.symbol_ids.iter() {
+            let sid_val: u32 = (*sid).into();
+            let name = s(index, sym(index, sid_val).name);
+            name_buf.clear();
+            name_buf.extend(name.chars().map(|c| c.to_ascii_lowercase()));
+            let len_diff = query_lower.len().abs_diff(name_buf.len());
+            if len_diff > max_dist {
+                continue;
+            }
+            let dist = damerau_levenshtein_buffered(query_lower, &name_buf, &mut dl_buf);
+            if dist > 0 && dist <= max_dist {
+                if dist * 2 > query_lower.len().max(name_buf.len()) {
+                    continue;
+                }
+                on_match(sid_val, &name_buf, dist);
+            }
+        }
+    }
+}
+
 /// Split an identifier on CamelCase boundaries, returning lowercased segments.
 ///
 /// Rules (matching IntelliJ CamelHumps):
@@ -699,20 +715,20 @@ fn split_camel_case(name: &str) -> Vec<String> {
             segments.push(current.to_ascii_lowercase());
             current.clear();
         }
-        if c.is_ascii_uppercase() {
-            if !current.is_empty() {
-                // Check if this is a transition from lowercase→uppercase (new segment)
-                let prev = bytes[i - 1] as char;
-                if prev.is_ascii_lowercase() || prev.is_ascii_digit() {
+        if c.is_ascii_uppercase()
+            && !current.is_empty()
+        {
+            // Check if this is a transition from lowercase→uppercase (new segment)
+            let prev = bytes[i - 1] as char;
+            if prev.is_ascii_lowercase() || prev.is_ascii_digit() {
+                segments.push(current.to_ascii_lowercase());
+                current.clear();
+            } else if prev.is_ascii_uppercase() {
+                // Consecutive uppercase: check if next char is lowercase (split before current)
+                // e.g., "HTMLParser" at 'P': split "HTM" | "LParser"... actually "HTML" | "Parser"
+                if i + 1 < len && (bytes[i + 1] as char).is_ascii_lowercase() {
                     segments.push(current.to_ascii_lowercase());
                     current.clear();
-                } else if prev.is_ascii_uppercase() {
-                    // Consecutive uppercase: check if next char is lowercase (split before current)
-                    // e.g., "HTMLParser" at 'P': split "HTM" | "LParser"... actually "HTML" | "Parser"
-                    if i + 1 < len && (bytes[i + 1] as char).is_ascii_lowercase() {
-                        segments.push(current.to_ascii_lowercase());
-                        current.clear();
-                    }
                 }
             }
         }
@@ -747,7 +763,7 @@ fn camel_match_score(query_segs: &[String], cand_segs: &[String], dl_buf: &mut V
         if q_bytes.len() >= 2
             && q_bytes.len() <= cand_segs.len()
             && q_bytes.len() * 2 > cand_segs.len() // must cover more than half the segments
-            && q_bytes.iter().all(|b| b.is_ascii_lowercase())
+            && q_bytes.iter().all(u8::is_ascii_lowercase)
         {
             let mut ci = 0;
             let mut matched = true;
@@ -755,9 +771,11 @@ fn camel_match_score(query_segs: &[String], cand_segs: &[String], dl_buf: &mut V
                 let found = cand_segs[ci..].iter().position(|seg| {
                     seg.as_bytes().first().copied() == Some(qb)
                 });
-                match found {
-                    Some(offset) => ci += offset + 1,
-                    None => { matched = false; break; }
+                if let Some(offset) = found {
+                    ci += offset + 1;
+                } else {
+                    matched = false;
+                    break;
                 }
             }
             if matched {
@@ -830,7 +848,7 @@ fn char_subsequence_score(query: &str, candidate_name: &str) -> Option<u32> {
     }
     let q_lower: Vec<u8> = query.bytes().map(|b| b.to_ascii_lowercase()).collect();
     let n_bytes = candidate_name.as_bytes();
-    let n_lower: Vec<u8> = n_bytes.iter().map(|b| b.to_ascii_lowercase()).collect();
+    let n_lower: Vec<u8> = n_bytes.iter().map(u8::to_ascii_lowercase).collect();
 
     let mut qi: usize = 0;
     let mut ni: usize = 0;
@@ -878,35 +896,13 @@ pub fn suggest_similar(index: &ArchivedKodexIndex, query: &str) -> String {
         return String::new();
     }
     // DL fuzzy matching (only if threshold > 0, i.e., query > 2 chars)
-    if max_dist > 0 {
-        let mut dl_buf = vec![0usize; 3 * (query_lower.len() + 1)];
-        let mut name_buf = String::new();
-        for bucket in index.name_hash_buckets.iter() {
-            for sid in bucket.symbol_ids.iter() {
-                let sid_val: u32 = (*sid).into();
-                let name = s(index, sym(index, sid_val).name);
-                name_buf.clear();
-                name_buf.extend(name.chars().map(|c| c.to_ascii_lowercase()));
-                if seen.contains(name_buf.as_str()) {
-                    continue;
-                }
-                // Early rejection: length difference alone exceeds threshold
-                let len_diff = query_lower.len().abs_diff(name_buf.len());
-                if len_diff > max_dist {
-                    continue;
-                }
-                let dist = damerau_levenshtein_buffered(&query_lower, &name_buf, &mut dl_buf);
-                if dist > 0 && dist <= max_dist {
-                    // GCC's meaningfulness guard: suppress if more than half the chars are wrong
-                    if dist * 2 > query_lower.len().max(name_buf.len()) {
-                        continue;
-                    }
-                    seen.insert(name_buf.clone()); // only allocate on match (rare)
-                    suggestions.push((name, dist));
-                }
-            }
+    fuzzy_scan(index, &query_lower, max_dist, |sid, name_lower, dist| {
+        if !seen.contains(name_lower) {
+            seen.insert(name_lower.to_string());
+            let name = s(index, sym(index, sid).name);
+            suggestions.push((name, dist));
         }
-    }
+    });
     // If DL found nothing, try CamelCase segment matching as fallback
     if suggestions.is_empty() {
         let query_segs = split_camel_case(query);

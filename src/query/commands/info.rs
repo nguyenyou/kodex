@@ -50,8 +50,8 @@ pub fn cmd_info(
     }
 
     // ── Flags: test / generated ────────────────────────────────────────────
-    let is_test: bool = fe.is_test.into();
-    let is_generated: bool = fe.is_generated.into();
+    let is_test: bool = fe.is_test;
+    let is_generated: bool = fe.is_generated;
     if is_test || is_generated {
         let mut flags = Vec::new();
         if is_test {
@@ -206,8 +206,7 @@ pub fn cmd_info(
                 | ArchivedSymbolKind::Interface => 0u8,
                 ArchivedSymbolKind::Type => 1,
                 ArchivedSymbolKind::Method if !is_val => 2,
-                ArchivedSymbolKind::Method => 3, // val methods (DI fields)
-                ArchivedSymbolKind::Field => 3,
+                ArchivedSymbolKind::Method | ArchivedSymbolKind::Field => 3,
                 _ => 4,
             }
         });
