@@ -2,6 +2,14 @@
 
 ## [Unreleased]
 
+### Added
+- Integration test infrastructure (`tests/integration/`) — end-to-end tests that compile real Scala projects with real build tools, index with kodex, and verify results. First suite: Mill cross-platform (JVM + Scala.js) with 20 assertions
+
+### Fixed
+- **Shared-source URI rewriting** — in Mill cross-platform builds, shared sources copied to `out/.../jsSharedSources.dest/` now resolve to their canonical `shared/src/` path. Previously, kodex showed `out/` paths for shared symbols and double-counted shared files across modules
+- Mill adapter now detects shared-source copies by comparing `generatedSources` paths (in `out/`) with `sources` paths across sibling modules, then rewrites SemanticDB URIs during loading
+- On a real 1.4M-symbol codebase: 61 rewrite rules eliminated ~2,000 duplicate file entries (~11% reduction)
+
 ## [1.3.0] — 2026-03-30
 
 ### Changed
