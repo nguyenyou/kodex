@@ -69,6 +69,10 @@ Early stage — breaking changes are expected and welcome. Do not add backwards-
 - `insta` for snapshot testing. `cargo insta review` to accept changes.
 - Shell snapshots in `tests/snapshot/` test against a real project; Rust tests in `tests/` are self-contained.
 
+## Branch Policy
+
+**Never push directly to main.** All changes must go through a pull request. Create a feature branch, commit there, and open a PR.
+
 ## Release Workflow
 
 1. Update `CHANGELOG.md` — move `[Unreleased]` content to `[X.Y.Z] — YYYY-MM-DD` section
