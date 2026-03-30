@@ -135,13 +135,17 @@ fn print_tree(
     };
     let mut filtered = filtered_neighbors(ctx.index, edge_list, sym_id, ctx.exclude);
 
-    // When --cross-module-only, keep only neighbors in a different module than the root
+    // When --cross-module-only, keep only neighbors in a different module than the
+    // current node (not just the root). This ensures edges between two non-root modules
+    // are shown if they cross a boundary.
     if ctx.cross_module_only {
+        let parent_file_id: u32 = sym_at(ctx.index, sym_id).file_id.into();
+        let parent_mod: u32 = file_entry(ctx.index, parent_file_id).module_id.into();
         filtered.retain(|&cid| {
             let c = sym_at(ctx.index, cid);
             let cf_id: u32 = c.file_id.into();
             let neighbor_mod: u32 = file_entry(ctx.index, cf_id).module_id.into();
-            neighbor_mod != ctx.root_mod && neighbor_mod != NONE_ID && ctx.root_mod != NONE_ID
+            neighbor_mod != parent_mod && neighbor_mod != NONE_ID && parent_mod != NONE_ID
         });
     }
 

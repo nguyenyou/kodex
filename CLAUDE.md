@@ -44,7 +44,7 @@ src/
     ├── filter.rs     Kind/module/exclude filtering + built-in noise lists
     ├── format.rs     Pretty-printing
     ├── graph.rs      Call/inheritance graph traversal
-    └── commands/     search, info, calls, refs, overview, noise — each returns String
+    └── commands/     search, info, calls, trace, refs, overview, noise — each returns String
 ```
 
 **Key data flow:** `.semanticdb` files → `provider.rs` discovers → `merge.rs` builds index → `writer.rs` serializes → `reader.rs` mmaps → `commands/` queries
@@ -84,3 +84,13 @@ Early stage — breaking changes are expected and welcome. Do not add backwards-
 7. Bump `version` in `.claude-plugin/marketplace.json` to match `Cargo.toml` — this is the **last** step, do NOT bump it in the version commit (step 2)
 
 **Changelog format:** Keep a Changelog style — `## [VERSION] — DATE` headers, `### Added`/`### Changed`/`### Fixed` sections. The release workflow extracts the matching version section with awk.
+
+## Integration Tests
+
+End-to-end tests with real build tools (Mill, sbt, scala-cli):
+```bash
+./tests/integration/run-all.sh                    # all integration suites
+./tests/integration/run-all.sh mill-cross-platform # specific suite
+```
+Requires: JDK 17+, internet (first run downloads deps). Always `cargo build --release` first.
+Add new suites: create `fixtures/<name>/` + `<name>.sh`, register in `run-all.sh`.
