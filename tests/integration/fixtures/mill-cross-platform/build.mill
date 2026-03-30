@@ -1,0 +1,29 @@
+package build
+
+import mill.*, scalalib.*, scalajslib.*
+
+// Cross-platform module: JVM + JS with shared sources.
+// Shared code in mylib/bar/src/ is compiled by BOTH jvm and js targets.
+// This reproduces the duplicate-symbol issue in kodex:
+//   - JVM semanticdb references: mylib/bar/src/com/example/SharedModel.scala
+//   - JS semanticdb references:  mylib/bar/src/com/example/SharedModel.scala
+// Both produce symbols for the same source file, causing duplicates in kodex index.
+
+object mylib extends Module {
+
+  trait SharedModule extends ScalaModule with PlatformScalaModule {
+    def scalaVersion = "3.3.4"
+    def scalacOptions = Seq("-Xsemanticdb")
+  }
+
+  object bar extends Module {
+    object jvm extends SharedModule {
+      object test extends ScalaTests with TestModule.Munit {
+        def mvnDeps = Seq(mvn"org.scalameta::munit:1.0.3")
+      }
+    }
+    object js extends SharedModule with ScalaJSModule {
+      def scalaJSVersion = "1.17.0"
+    }
+  }
+}
