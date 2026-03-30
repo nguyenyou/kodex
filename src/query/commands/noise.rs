@@ -125,38 +125,105 @@ impl NoiseMetrics {
     }
 }
 
-/// Compute the noise exclude pattern as a comma-separated string.
-/// Returns empty string if no noise detected. Used by `--noise-filter`.
-pub fn compute_noise_exclude(index: &ArchivedKodexIndex) -> String {
-    let limit = 15; // same default as cmd_noise
+/// A category of noise patterns with a label and collapsed exclude terms.
+pub struct NoiseCategory {
+    pub label: &'static str,
+    pub patterns: Vec<String>,
+}
+
+/// Compute noise patterns grouped by category.
+/// Each category runs a heuristic detector and collapses prefixes independently.
+pub fn compute_noise_patterns(index: &ArchivedKodexIndex) -> Vec<NoiseCategory> {
+    let limit = 15;
     let m = NoiseMetrics::build(index);
     let mut emitted: FxHashSet<u32> = FxHashSet::default();
 
-    let plumbing = detect_effect_plumbing(index, &m.forward_counts, &m.reverse_counts, &mut emitted, limit);
-    let hubs = detect_hub_utilities(index, &m.ref_counts, &m.module_spreads, &mut emitted, limit);
-    let factories = detect_id_factories(index, &m.reverse_counts, &mut emitted, limit);
-    let store_ops = detect_store_ops(index, &m.reverse_counts, &mut emitted, limit);
-    let infra = detect_infra_plumbing(index, &m.reverse_counts, &m.ref_counts, &m.module_spreads, &mut emitted, limit);
+    let categories: Vec<(&str, Vec<NoiseCandidate>)> = vec![
+        ("Effect plumbing", detect_effect_plumbing(index, &m.forward_counts, &m.reverse_counts, &mut emitted, limit)),
+        ("Hub utilities", detect_hub_utilities(index, &m.ref_counts, &m.module_spreads, &mut emitted, limit)),
+        ("ID factories", detect_id_factories(index, &m.reverse_counts, &mut emitted, limit)),
+        ("Store ops", detect_store_ops(index, &m.reverse_counts, &mut emitted, limit)),
+        ("Infrastructure plumbing", detect_infra_plumbing(index, &m.reverse_counts, &m.ref_counts, &m.module_spreads, &mut emitted, limit)),
+    ];
 
-    let all: Vec<&NoiseCandidate> = plumbing.iter()
-        .chain(hubs.iter())
-        .chain(factories.iter())
-        .chain(store_ops.iter())
-        .chain(infra.iter())
+    let mut seen: FxHashSet<String> = FxHashSet::default();
+    categories
+        .into_iter()
+        .filter_map(|(label, candidates)| {
+            let terms: Vec<&str> = candidates
+                .iter()
+                .filter(|c| seen.insert(c.exclude_name.clone()))
+                .map(|c| c.exclude_name.as_str())
+                .collect();
+            if terms.is_empty() {
+                return None;
+            }
+            Some(NoiseCategory {
+                label,
+                patterns: collapse_prefixes(&terms),
+            })
+        })
+        .collect()
+}
+
+/// Compute the noise exclude pattern as a comma-separated string.
+/// Returns empty string if no noise detected.
+pub fn compute_noise_exclude(index: &ArchivedKodexIndex) -> String {
+    let categories = compute_noise_patterns(index);
+    let all: Vec<String> = categories
+        .into_iter()
+        .flat_map(|c| c.patterns)
         .collect();
+    all.join(",")
+}
 
-    if all.is_empty() {
-        return String::new();
-    }
+// ── Noise config file I/O ──────────────────────────────────────────────────
 
-    let mut seen: FxHashSet<&str> = FxHashSet::default();
-    let mut raw_terms: Vec<&str> = Vec::new();
-    for c in &all {
-        if seen.insert(&c.exclude_name) {
-            raw_terms.push(&c.exclude_name);
+const NOISE_CONF_NAME: &str = "noise.conf";
+
+const NOISE_CONF_HEADER: &str = "\
+# kodex noise config — auto-generated, safe to edit
+# One exclude pattern per line. Matches FQN, name, or owner (substring).
+# Delete lines to stop filtering those symbols. Add lines to filter more.
+# Regenerate with: kodex noise --init
+# WARNING: kodex index overwrites this file.
+";
+
+/// Write `.scalex/noise.conf` with categorized exclude patterns.
+/// Returns the path to the written file.
+pub fn write_noise_conf(
+    scalex_dir: &std::path::Path,
+    index: &ArchivedKodexIndex,
+) -> std::io::Result<std::path::PathBuf> {
+    let categories = compute_noise_patterns(index);
+    let conf_path = scalex_dir.join(NOISE_CONF_NAME);
+
+    let mut content = String::from(NOISE_CONF_HEADER);
+    for cat in &categories {
+        content.push_str(&format!("\n# {}\n", cat.label));
+        for p in &cat.patterns {
+            content.push_str(p);
+            content.push('\n');
         }
     }
-    collapse_prefixes(&raw_terms).join(",")
+
+    std::fs::write(&conf_path, &content)?;
+    Ok(conf_path)
+}
+
+/// Read `.scalex/noise.conf` if it exists.
+/// Returns `None` if the file is missing (caller should fall back to auto-compute).
+/// Returns `Some(vec![])` if the file exists but has no patterns (user cleared it).
+pub fn read_noise_conf(scalex_dir: &std::path::Path) -> Option<Vec<String>> {
+    let conf_path = scalex_dir.join(NOISE_CONF_NAME);
+    let content = std::fs::read_to_string(&conf_path).ok()?;
+    let patterns = content
+        .lines()
+        .map(str::trim)
+        .filter(|line| !line.is_empty() && !line.starts_with('#'))
+        .map(String::from)
+        .collect();
+    Some(patterns)
 }
 
 /// Noise analysis: detect symbols that clutter call-graph/info output.
@@ -266,6 +333,9 @@ pub fn cmd_noise(index: &ArchivedKodexIndex, limit: usize) -> CommandResult {
         writeln!(out, "Suggested --exclude:").unwrap();
         writeln!(out, "  --exclude \"{}\"", collapsed.join(",")).unwrap();
     }
+
+    writeln!(out).unwrap();
+    writeln!(out, "Config: .scalex/noise.conf (edit to customize, `kodex noise --init` to regenerate)").unwrap();
 
     CommandResult::Found(out)
 }
@@ -692,5 +762,54 @@ mod tests {
         assert_eq!(longest_common_prefix("HttpClientFactory", "HttpClientPool"), "HttpClient");
         assert_eq!(longest_common_prefix("abc", "xyz"), "");
         assert_eq!(longest_common_prefix("same", "same"), "same");
+    }
+
+    #[test]
+    fn test_read_noise_conf_missing_file() {
+        let dir = tempfile::tempdir().unwrap();
+        assert!(read_noise_conf(dir.path()).is_none());
+    }
+
+    #[test]
+    fn test_read_noise_conf_empty_file() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("noise.conf"), "# only comments\n\n").unwrap();
+        let result = read_noise_conf(dir.path());
+        assert_eq!(result, Some(vec![]));
+    }
+
+    #[test]
+    fn test_read_noise_conf_with_patterns() {
+        let dir = tempfile::tempdir().unwrap();
+        let content = "# header\nFooBar\n  BazQux  \n# comment\n\nHello\n";
+        std::fs::write(dir.path().join("noise.conf"), content).unwrap();
+        let result = read_noise_conf(dir.path()).unwrap();
+        assert_eq!(result, vec!["FooBar", "BazQux", "Hello"]);
+    }
+
+    #[test]
+    fn test_write_and_read_noise_conf_roundtrip() {
+        // Build a minimal index — won't have noise candidates, but tests the I/O path
+        use crate::index::writer::write_index;
+        use crate::ingest::merge::build_index;
+        use crate::ingest::types::*;
+
+        let docs: Vec<IntermediateDoc> = vec![];
+        let built = build_index(&docs, None, ".");
+        let dir = tempfile::tempdir().unwrap();
+        let idx_path = dir.path().join("kodex.idx");
+        write_index(&built, &idx_path).unwrap();
+
+        let reader = crate::index::reader::IndexReader::open(&idx_path).unwrap();
+        let conf_path = write_noise_conf(dir.path(), reader.index()).unwrap();
+
+        assert!(conf_path.exists());
+        let content = std::fs::read_to_string(&conf_path).unwrap();
+        assert!(content.starts_with("# kodex noise config"));
+
+        // Round-trip: read back what we wrote
+        let patterns = read_noise_conf(dir.path()).unwrap();
+        // Empty index → no noise patterns, but file exists
+        assert!(patterns.is_empty());
     }
 }

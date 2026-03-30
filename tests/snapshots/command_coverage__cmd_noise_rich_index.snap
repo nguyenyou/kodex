@@ -1,5 +1,8 @@
 ---
 source: tests/command_coverage.rs
+assertion_line: 1188
 expression: out.output()
 ---
 Noise analysis
+
+Config: .scalex/noise.conf (edit to customize, `kodex noise --init` to regenerate)

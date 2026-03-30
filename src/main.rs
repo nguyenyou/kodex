@@ -154,6 +154,9 @@ enum Command {
         /// Max candidates per category
         #[arg(long, default_value = "15")]
         limit: usize,
+        /// Write/regenerate .scalex/noise.conf
+        #[arg(long)]
+        init: bool,
     },
 }
 
@@ -175,7 +178,7 @@ fn run(cli: Cli) -> anyhow::Result<()> {
 
     match cli.command {
         Command::Overview => {
-            let reader = open_index(cli.idx.as_deref())?;
+            let (reader, _) = open_index(cli.idx.as_deref())?;
             emit(query::commands::overview::cmd_overview(reader.index()));
             Ok(())
         }
@@ -189,8 +192,9 @@ fn run(cli: Cli) -> anyhow::Result<()> {
             if q.query.is_none() && q.module.is_none() {
                 anyhow::bail!("Either <QUERY> or --module must be provided");
             }
-            let reader = open_index(cli.idx.as_deref())?;
-            let exclude = resolve_exclude(&excl, reader.index());
+            let (reader, idx_path) = open_index(cli.idx.as_deref())?;
+            let scalex_dir = idx_path.parent().unwrap_or(Path::new("."));
+            let exclude = resolve_exclude(&excl, reader.index(), scalex_dir);
             emit(query::commands::search::cmd_search(
                 reader.index(),
                 q.query.as_deref(),
@@ -205,8 +209,9 @@ fn run(cli: Cli) -> anyhow::Result<()> {
 
 
         Command::Info { fqn, excl } => {
-            let reader = open_index(cli.idx.as_deref())?;
-            let exclude = resolve_exclude(&excl, reader.index());
+            let (reader, idx_path) = open_index(cli.idx.as_deref())?;
+            let scalex_dir = idx_path.parent().unwrap_or(Path::new("."));
+            let exclude = resolve_exclude(&excl, reader.index(), scalex_dir);
             emit(query::commands::info::cmd_info(
                 reader.index(),
                 &fqn,
@@ -216,8 +221,9 @@ fn run(cli: Cli) -> anyhow::Result<()> {
         }
 
         Command::Calls { fqn, depth, reverse, cross_module_only, excl } => {
-            let reader = open_index(cli.idx.as_deref())?;
-            let exclude = resolve_exclude(&excl, reader.index());
+            let (reader, idx_path) = open_index(cli.idx.as_deref())?;
+            let scalex_dir = idx_path.parent().unwrap_or(Path::new("."));
+            let exclude = resolve_exclude(&excl, reader.index(), scalex_dir);
             emit(query::commands::calls::cmd_calls(
                 reader.index(),
                 &fqn,
@@ -230,8 +236,9 @@ fn run(cli: Cli) -> anyhow::Result<()> {
         }
 
         Command::Trace { fqn, depth, reverse, cross_module_only, excl } => {
-            let reader = open_index(cli.idx.as_deref())?;
-            let exclude = resolve_exclude(&excl, reader.index());
+            let (reader, idx_path) = open_index(cli.idx.as_deref())?;
+            let scalex_dir = idx_path.parent().unwrap_or(Path::new("."));
+            let exclude = resolve_exclude(&excl, reader.index(), scalex_dir);
             emit(query::commands::trace::cmd_trace(
                 reader.index(),
                 &fqn,
@@ -244,7 +251,7 @@ fn run(cli: Cli) -> anyhow::Result<()> {
         }
 
         Command::Refs { fqn, limit } => {
-            let reader = open_index(cli.idx.as_deref())?;
+            let (reader, _) = open_index(cli.idx.as_deref())?;
             emit(query::commands::refs::cmd_refs(
                 reader.index(),
                 &fqn,
@@ -253,8 +260,13 @@ fn run(cli: Cli) -> anyhow::Result<()> {
             Ok(())
         }
 
-        Command::Noise { limit } => {
-            let reader = open_index(cli.idx.as_deref())?;
+        Command::Noise { limit, init } => {
+            let (reader, idx_path) = open_index(cli.idx.as_deref())?;
+            if init {
+                let scalex_dir = idx_path.parent().unwrap_or(Path::new("."));
+                let conf_path = query::commands::noise::write_noise_conf(scalex_dir, reader.index())?;
+                eprintln!("Wrote {}", conf_path.display());
+            }
             emit(query::commands::noise::cmd_noise(reader.index(), limit));
             Ok(())
         }
@@ -333,6 +345,12 @@ fn build_index_for_workspace(root: &str) -> anyhow::Result<PathBuf> {
     std::fs::create_dir_all(&scalex_dir)?;
     let idx_path = scalex_dir.join("kodex.idx");
     index::writer::write_index(&built, &idx_path)?;
+
+    // Generate noise config from the freshly built index
+    let reader = index::reader::IndexReader::open(&idx_path)?;
+    let conf_path = query::commands::noise::write_noise_conf(&scalex_dir, reader.index())?;
+    eprintln!("Noise config: {}", conf_path.display());
+
     let t_total = t0.elapsed();
     eprintln!("Total: {:.1}s", t_total.as_secs_f64());
 
@@ -340,7 +358,8 @@ fn build_index_for_workspace(root: &str) -> anyhow::Result<PathBuf> {
 }
 
 /// Open the index, or bail if it doesn't exist.
-fn open_index(idx_path: Option<&str>) -> anyhow::Result<index::reader::IndexReader> {
+/// Returns the reader and the resolved index file path (for locating .scalex/ dir).
+fn open_index(idx_path: Option<&str>) -> anyhow::Result<(index::reader::IndexReader, PathBuf)> {
     let path = match idx_path {
         Some(p) => PathBuf::from(p),
         None => match std::env::var("KODEX_IDX") {
@@ -356,7 +375,8 @@ fn open_index(idx_path: Option<&str>) -> anyhow::Result<index::reader::IndexRead
         );
     }
 
-    index::reader::IndexReader::open(&path)
+    let reader = index::reader::IndexReader::open(&path)?;
+    Ok((reader, path))
 }
 
 /// Print command output.
@@ -376,20 +396,26 @@ fn parse_exclude(exclude: Option<&String>) -> Vec<String> {
         .unwrap_or_default()
 }
 
-/// Resolve exclude patterns: noise filtering is on by default, --include-noise disables it.
-fn resolve_exclude(excl: &ExcludeArgs, index: &kodex::model::ArchivedKodexIndex) -> Vec<String> {
+/// Resolve exclude patterns: reads `.scalex/noise.conf` if it exists, otherwise
+/// falls back to auto-computed noise. `--include-noise` disables noise entirely.
+fn resolve_exclude(
+    excl: &ExcludeArgs,
+    index: &kodex::model::ArchivedKodexIndex,
+    scalex_dir: &Path,
+) -> Vec<String> {
     if excl.include_noise {
         // User explicitly wants noise — only apply manual --exclude if given
-        parse_exclude(excl.exclude.as_ref())
-    } else if excl.exclude.is_some() {
-        // Manual exclude provided — apply both manual + auto noise
-        let mut patterns = parse_exclude(excl.exclude.as_ref());
-        let noise = query::commands::noise::compute_noise_exclude(index);
-        patterns.extend(parse_exclude(Some(&noise)));
-        patterns
-    } else {
-        // Default: auto-compute noise exclude
-        let pattern = query::commands::noise::compute_noise_exclude(index);
-        parse_exclude(Some(&pattern))
+        return parse_exclude(excl.exclude.as_ref());
     }
+
+    // Read config file, fall back to auto-compute if missing
+    let noise_patterns = query::commands::noise::read_noise_conf(scalex_dir)
+        .unwrap_or_else(|| {
+            let pattern = query::commands::noise::compute_noise_exclude(index);
+            parse_exclude(Some(&pattern))
+        });
+
+    let mut patterns = parse_exclude(excl.exclude.as_ref());
+    patterns.extend(noise_patterns);
+    patterns
 }
