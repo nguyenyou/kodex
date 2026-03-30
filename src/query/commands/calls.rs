@@ -18,19 +18,21 @@ enum Direction {
 /// Call graph with module boundary annotations.
 /// Requires a fully-qualified name (FQN) from search results.
 /// `reverse = false` → downstream (callees), `reverse = true` → upstream (callers).
+/// `cross_module_only = true` → only show edges that cross module boundaries.
 pub fn cmd_calls(
     index: &ArchivedKodexIndex,
     fqn: &str,
     depth: usize,
     exclude: &[String],
     reverse: bool,
+    cross_module_only: bool,
 ) -> CommandResult {
     let direction = if reverse {
         Direction::Reverse
     } else {
         Direction::Forward
     };
-    cmd_tree(index, fqn, depth, exclude, direction)
+    cmd_tree(index, fqn, depth, exclude, direction, cross_module_only)
 }
 
 fn cmd_tree(
@@ -39,6 +41,7 @@ fn cmd_tree(
     depth: usize,
     exclude: &[String],
     direction: Direction,
+    cross_module_only: bool,
 ) -> CommandResult {
     let Some(sym) = find_by_fqn(index, fqn) else {
         return CommandResult::symbol_not_found(index, fqn);
@@ -60,14 +63,22 @@ fn cmd_tree(
         max_depth: depth,
         exclude,
         direction,
+        cross_module_only,
     };
     print_tree(&mut out, &ctx, sym_id, 1, &mut visited);
 
     // If the tree is empty (root only, no children), add a hint
     if visited.len() == 1 {
-        let label = match direction {
-            Direction::Forward => "callees",
-            Direction::Reverse => "callers",
+        let label = if cross_module_only {
+            match direction {
+                Direction::Forward => "cross-module callees",
+                Direction::Reverse => "cross-module callers",
+            }
+        } else {
+            match direction {
+                Direction::Forward => "callees",
+                Direction::Reverse => "callers",
+            }
         };
         let fqn = s(index, sym.fqn);
         let file = s(index, file_entry(index, file_id).path);
@@ -104,6 +115,7 @@ struct TreeCtx<'a> {
     max_depth: usize,
     exclude: &'a [String],
     direction: Direction,
+    cross_module_only: bool,
 }
 
 fn print_tree(
@@ -121,7 +133,17 @@ fn print_tree(
         Direction::Forward => &ctx.index.call_graph_forward,
         Direction::Reverse => &ctx.index.call_graph_reverse,
     };
-    let filtered = filtered_neighbors(ctx.index, edge_list, sym_id, ctx.exclude);
+    let mut filtered = filtered_neighbors(ctx.index, edge_list, sym_id, ctx.exclude);
+
+    // When --cross-module-only, keep only neighbors in a different module than the root
+    if ctx.cross_module_only {
+        filtered.retain(|&cid| {
+            let c = sym_at(ctx.index, cid);
+            let cf_id: u32 = c.file_id.into();
+            let neighbor_mod: u32 = file_entry(ctx.index, cf_id).module_id.into();
+            neighbor_mod != ctx.root_mod && neighbor_mod != NONE_ID && ctx.root_mod != NONE_ID
+        });
+    }
 
     for (i, &cid) in filtered.iter().enumerate() {
         let c = sym_at(ctx.index, cid);

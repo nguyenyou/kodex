@@ -116,6 +116,24 @@ enum Command {
         /// Walk upstream (callers) instead of downstream (callees)
         #[arg(short, long)]
         reverse: bool,
+        /// Only show edges that cross module boundaries
+        #[arg(long)]
+        cross_module_only: bool,
+        #[command(flatten)]
+        excl: ExcludeArgs,
+    },
+    /// Call tree with info-level detail (signature + source) at each node
+    Trace {
+        /// Symbol FQN (from search results)
+        fqn: String,
+        #[arg(long, default_value = "3")]
+        depth: usize,
+        /// Walk upstream (callers) instead of downstream (callees)
+        #[arg(short, long)]
+        reverse: bool,
+        /// Only show edges that cross module boundaries
+        #[arg(long)]
+        cross_module_only: bool,
         #[command(flatten)]
         excl: ExcludeArgs,
     },
@@ -193,7 +211,7 @@ fn run(cli: Cli) -> anyhow::Result<()> {
             Ok(())
         }
 
-        Command::Calls { fqn, depth, reverse, excl } => {
+        Command::Calls { fqn, depth, reverse, cross_module_only, excl } => {
             let reader = open_index(cli.idx.as_deref())?;
             let exclude = resolve_exclude(&excl, reader.index());
             emit(query::commands::calls::cmd_calls(
@@ -202,6 +220,21 @@ fn run(cli: Cli) -> anyhow::Result<()> {
                 depth,
                 &exclude,
                 reverse,
+                cross_module_only,
+            ));
+            Ok(())
+        }
+
+        Command::Trace { fqn, depth, reverse, cross_module_only, excl } => {
+            let reader = open_index(cli.idx.as_deref())?;
+            let exclude = resolve_exclude(&excl, reader.index());
+            emit(query::commands::trace::cmd_trace(
+                reader.index(),
+                &fqn,
+                depth,
+                &exclude,
+                reverse,
+                cross_module_only,
             ));
             Ok(())
         }

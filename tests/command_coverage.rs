@@ -223,7 +223,7 @@ fn cmd_flow_depth1() {
     let reader = build_test_index();
     let index = reader.index();
     let out =
-        kodex::query::commands::calls::cmd_calls(index, "com/example/ServiceImpl#process().", 1, &[], false);
+        kodex::query::commands::calls::cmd_calls(index, "com/example/ServiceImpl#process().", 1, &[], false, false);
     assert!(out.is_found());
     insta::assert_snapshot!(out.output());
 }
@@ -232,7 +232,7 @@ fn cmd_flow_depth1() {
 fn cmd_flow_not_found() {
     let reader = build_test_index();
     let index = reader.index();
-    let out = kodex::query::commands::calls::cmd_calls(index, "NonExistent99999", 2, &[], false);
+    let out = kodex::query::commands::calls::cmd_calls(index, "NonExistent99999", 2, &[], false, false);
     assert!(!out.is_found());
 }
 
@@ -245,6 +245,7 @@ fn cmd_flow_with_exclude() {
         "com/example/ServiceImpl#process().",
         2,
         &["save".to_string()],
+        false,
         false,
     );
     assert!(out.is_found());
@@ -356,7 +357,7 @@ fn resolve_prefix_short_query() {
 fn cmd_flow_reverse_depth1() {
     let reader = build_test_index();
     let index = reader.index();
-    let out = kodex::query::commands::calls::cmd_calls(index, "com/example/ServiceImpl#save().", 1, &[], true);
+    let out = kodex::query::commands::calls::cmd_calls(index, "com/example/ServiceImpl#save().", 1, &[], true, false);
     assert!(out.output().contains("save"));
 }
 
@@ -364,7 +365,7 @@ fn cmd_flow_reverse_depth1() {
 fn cmd_flow_reverse_not_found() {
     let reader = build_test_index();
     let index = reader.index();
-    let out = kodex::query::commands::calls::cmd_calls(index, "NonExistent99999", 2, &[], true);
+    let out = kodex::query::commands::calls::cmd_calls(index, "NonExistent99999", 2, &[], true, false);
     assert!(!out.is_found());
 }
 
@@ -372,7 +373,7 @@ fn cmd_flow_reverse_not_found() {
 fn cmd_flow_reverse_with_exclude() {
     let reader = build_test_index();
     let index = reader.index();
-    kodex::query::commands::calls::cmd_calls(index, "com/example/ServiceImpl#save().", 2, &["process".to_string()], true);
+    kodex::query::commands::calls::cmd_calls(index, "com/example/ServiceImpl#save().", 2, &["process".to_string()], true, false);
 }
 
 #[test]
@@ -744,10 +745,123 @@ fn build_rich_index() -> common::TestIndex {
 fn cross_module_flow() {
     let reader = build_rich_index();
     let index = reader.index();
-    let out = kodex::query::commands::calls::cmd_calls(index, "com/example/PetStore.adopt().", 3, &[], false);
+    let out = kodex::query::commands::calls::cmd_calls(index, "com/example/PetStore.adopt().", 3, &[], false, false);
     assert!(out.is_found());
     // adopt() calls bark() which is in a different module
     assert!(out.output().contains("bark"));
+}
+
+// ── calls --cross-module-only ─────────────────────────────────────────────
+
+#[test]
+fn cross_module_only_shows_cross_module_edges() {
+    let reader = build_rich_index();
+    let index = reader.index();
+    // adopt() in modules.app calls bark() in modules.core — cross-module edge
+    let out = kodex::query::commands::calls::cmd_calls(
+        index, "com/example/PetStore.adopt().", 3, &[], false, true,
+    );
+    assert!(out.is_found());
+    assert!(out.output().contains("bark"), "cross-module callee bark should appear");
+    assert!(out.output().contains("cross-module"), "should have cross-module annotation");
+}
+
+#[test]
+fn cross_module_only_hides_same_module_edges() {
+    let reader = build_test_index();
+    let index = reader.index();
+    // Single-module fixture: all edges are within modules.billing
+    let out = kodex::query::commands::calls::cmd_calls(
+        index, "com/example/ServiceImpl#process().", 3, &[], false, true,
+    );
+    assert!(out.is_found());
+    // save() is in the same module — should be hidden
+    assert!(!out.output().contains("save"), "same-module callee save should be hidden");
+    assert!(out.output().contains("no cross-module callees"), "should show empty hint");
+}
+
+#[test]
+fn cross_module_only_reverse() {
+    let reader = build_rich_index();
+    let index = reader.index();
+    // bark() in modules.core is called by adopt() in modules.app — cross-module caller
+    let out = kodex::query::commands::calls::cmd_calls(
+        index, "com/example/Dog#bark().", 3, &[], true, true,
+    );
+    assert!(out.is_found());
+    assert!(out.output().contains("adopt"), "cross-module caller adopt should appear");
+}
+
+// ── trace ─────────────────────────────────────────────────────────────────
+
+#[test]
+fn cmd_trace_not_found() {
+    let reader = build_test_index();
+    let index = reader.index();
+    let out = kodex::query::commands::trace::cmd_trace(
+        index, "NonExistent99999", 2, &[], false, false,
+    );
+    assert!(!out.is_found());
+}
+
+#[test]
+fn cmd_trace_single_module() {
+    let reader = build_test_index();
+    let index = reader.index();
+    let out = kodex::query::commands::trace::cmd_trace(
+        index, "com/example/ServiceImpl#process().", 2, &[], false, false,
+    );
+    assert!(out.is_found());
+    let text = out.output();
+    // Root node should have info-level detail
+    assert!(text.contains("fqn: com/example/ServiceImpl#process()."), "should show FQN");
+    assert!(text.contains("sig:") || text.contains("process"), "should show signature or name");
+    // Callee save() should appear with info detail
+    assert!(text.contains("save"), "callee save should appear");
+    assert!(text.contains("fqn: com/example/ServiceImpl#save()."), "callee should have FQN");
+}
+
+#[test]
+fn cmd_trace_cross_module() {
+    let reader = build_rich_index();
+    let index = reader.index();
+    let out = kodex::query::commands::trace::cmd_trace(
+        index, "com/example/PetStore.adopt().", 3, &[], false, false,
+    );
+    assert!(out.is_found());
+    let text = out.output();
+    // Root: adopt
+    assert!(text.contains("fqn: com/example/PetStore.adopt()."), "root should show FQN");
+    // Cross-module callee: bark
+    assert!(text.contains("bark"), "cross-module callee bark should appear");
+    assert!(text.contains("cross-module"), "should annotate cross-module edge");
+    assert!(text.contains("fqn: com/example/Dog#bark()."), "callee should have FQN");
+}
+
+#[test]
+fn cmd_trace_cross_module_only() {
+    let reader = build_rich_index();
+    let index = reader.index();
+    let out = kodex::query::commands::trace::cmd_trace(
+        index, "com/example/PetStore.adopt().", 3, &[], false, true,
+    );
+    assert!(out.is_found());
+    let text = out.output();
+    assert!(text.contains("bark"), "cross-module callee should appear");
+    assert!(text.contains("fqn: com/example/Dog#bark()."), "should have info detail");
+}
+
+#[test]
+fn cmd_trace_reverse() {
+    let reader = build_rich_index();
+    let index = reader.index();
+    let out = kodex::query::commands::trace::cmd_trace(
+        index, "com/example/Dog#bark().", 2, &[], true, false,
+    );
+    assert!(out.is_found());
+    let text = out.output();
+    // bark's caller: adopt (cross-module) and speak (same-module)
+    assert!(text.contains("adopt") || text.contains("speak"), "should show callers");
 }
 
 #[test]
@@ -919,7 +1033,7 @@ fn cross_version_duplicate_docs_preserve_call_edges() {
 
     // Forward: main should call helper
     let flow_out =
-        kodex::query::commands::calls::cmd_calls(index, "com/example/MyApp.main().", 1, &[], false);
+        kodex::query::commands::calls::cmd_calls(index, "com/example/MyApp.main().", 1, &[], false, false);
     assert!(flow_out.is_found());
     assert!(
         flow_out.output().contains("helper"),
@@ -929,7 +1043,7 @@ fn cross_version_duplicate_docs_preserve_call_edges() {
 
     // Reverse: helper should be called by main
     let rflow_out =
-        kodex::query::commands::calls::cmd_calls(index, "com/example/MyApp.helper().", 1, &[], true);
+        kodex::query::commands::calls::cmd_calls(index, "com/example/MyApp.helper().", 1, &[], true, false);
     assert!(rflow_out.is_found());
     assert!(
         rflow_out.output().contains("main"),

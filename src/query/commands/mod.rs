@@ -2,6 +2,7 @@ pub mod overview;
 pub mod search;
 pub mod info;
 pub mod calls;
+pub mod trace;
 pub mod refs;
 pub mod noise;
 
