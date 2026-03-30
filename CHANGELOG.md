@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [1.1.0] — 2026-03-30
+
 ### Changed
 - Noise filtering is now **on by default** — `search`, `info`, and `calls` automatically exclude generated code (ScalaPB, protobuf), test files, stdlib symbols, and plumbing methods (apply, map, flatMap, etc.) without any flags
 - `--noise-filter` flag renamed to `--include-noise` with inverted semantics — pass it to see everything, including noise
