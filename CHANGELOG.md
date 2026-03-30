@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [1.4.0] — 2026-03-30
+
 ### Added
 - **`calls --cross-module-only`** — filters the call tree to show only edges that cross module boundaries, hiding intra-module calls. Useful for understanding a method's external dependencies at a glance
 - **`trace` command** — call tree with `info`-level detail (kind, FQN, signature, source code) at each node. Like running `info` recursively down the call chain. Supports `--depth`, `--reverse`, and `--cross-module-only`
