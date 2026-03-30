@@ -484,10 +484,11 @@ pub fn make_rich_test_docs() -> Vec<IntermediateDoc> {
     ]
 }
 
-/// Fixture with case class, enum, and plain class to test property-based kind filtering.
+/// Fixture with case class, enum (Class-kinded and Interface-kinded), and plain class.
 ///
 ///   case class Config(host: String, port: Int)   — PROP_CASE
-///   enum Status { Active, Inactive }             — PROP_ENUM
+///   enum Status { Active, Inactive }             — PROP_ENUM (Class-kinded)
+///   enum Direction                               — PROP_ENUM (Interface-kinded, Scala 3 top-level)
 ///   class Engine                                 — plain class (no PROP_CASE, no PROP_ENUM)
 #[allow(dead_code)]
 pub fn make_property_kind_docs() -> Vec<IntermediateDoc> {
@@ -511,6 +512,16 @@ pub fn make_property_kind_docs() -> Vec<IntermediateDoc> {
                 kind: SymbolKind::Class,
                 properties: 0x4 | 0x10 | 0x4000, // abstract | sealed | enum
                 signature: "enum Status".to_string(),
+                parents: vec![],
+                overridden_symbols: vec![],
+                access: Access::Public,
+            },
+            IntermediateSymbol {
+                fqn: "com/example/Direction#".to_string(),
+                display_name: "Direction".to_string(),
+                kind: SymbolKind::Interface,
+                properties: 0x4 | 0x10 | 0x4000, // abstract | sealed | enum
+                signature: "enum Direction".to_string(),
                 parents: vec![],
                 overridden_symbols: vec![],
                 access: Access::Public,
@@ -542,9 +553,16 @@ pub fn make_property_kind_docs() -> Vec<IntermediateDoc> {
                 end_col: 12,
             },
             IntermediateOccurrence {
+                symbol: "com/example/Direction#".to_string(),
+                role: ReferenceRole::Definition,
+                start_line: 7,
+                start_col: 6,
+                end_col: 15,
+            },
+            IntermediateOccurrence {
                 symbol: "com/example/Engine#".to_string(),
                 role: ReferenceRole::Definition,
-                start_line: 8,
+                start_line: 10,
                 start_col: 6,
                 end_col: 12,
             },

@@ -58,12 +58,10 @@ const PROPERTY_FLAGS: &[(u32, &str)] = &[
     (crate::model::PROP_SEALED, "sealed"),
     (crate::model::PROP_IMPLICIT, "implicit"),
     (crate::model::PROP_LAZY, "lazy"),
-    (crate::model::PROP_CASE, "case"),
     (crate::model::PROP_VAL, "val"),
     (crate::model::PROP_VAR, "var"),
     (crate::model::PROP_STATIC, "static"),
     (crate::model::PROP_PRIMARY, "primary"),
-    (crate::model::PROP_ENUM, "enum"),
     (crate::model::PROP_DEFAULT, "default"),
     (crate::model::PROP_GIVEN, "given"),
     (crate::model::PROP_INLINE, "inline"),
@@ -221,15 +219,15 @@ mod tests {
 
     #[test]
     fn test_format_properties_all_known() {
+        // PROP_CASE (0x80) and PROP_ENUM (0x4000) are excluded from PROPERTY_FLAGS
+        // because display_kind() now surfaces them in the kind label.
         let all = 0x4
             | 0x8
             | 0x10
             | 0x20
             | 0x40
-            | 0x80
             | 0x400
             | 0x800
-            | 0x4000
             | 0x10000
             | 0x20000
             | 0x40000
@@ -241,15 +239,15 @@ mod tests {
         assert!(result.contains("sealed"));
         assert!(result.contains("implicit"));
         assert!(result.contains("lazy"));
-        assert!(result.contains("case"));
         assert!(result.contains("val"));
         assert!(result.contains("var"));
-        assert!(result.contains("enum"));
         assert!(result.contains("given"));
         assert!(result.contains("inline"));
         assert!(result.contains("open"));
         assert!(result.contains("opaque"));
         assert!(result.contains("override"));
+        assert!(!result.contains("case"), "case is now in display_kind, not properties");
+        assert!(!result.contains("enum"), "enum is now in display_kind, not properties");
     }
 
     #[test]

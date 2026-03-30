@@ -355,7 +355,7 @@ fn detect_hub_utilities(
             let kind = display_kind(sym);
             NoiseCandidate {
                 exclude_name: name.to_string(),
-                display: format!("{kind:<6} {name}"),
+                display: format!("{kind:<11} {name}"),
                 evidence: format!("{refs} refs, {modules} modules"),
             }
         })

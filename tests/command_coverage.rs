@@ -120,8 +120,10 @@ fn filter_by_kind_enum() {
     let index = reader.index();
     let all: Vec<_> = index.symbols.iter().collect();
     let enums = filter_by_kind(&all, Some("enum"));
-    assert_eq!(enums.len(), 1, "should find exactly one enum");
-    assert_eq!(kodex::query::s(index, enums[0].name), "Status");
+    assert_eq!(enums.len(), 2, "should find Class-kinded and Interface-kinded enums");
+    let names: Vec<&str> = enums.iter().map(|s| kodex::query::s(index, s.name)).collect();
+    assert!(names.contains(&"Status"), "should include Class-kinded enum");
+    assert!(names.contains(&"Direction"), "should include Interface-kinded enum");
 }
 
 #[test]
@@ -157,6 +159,18 @@ fn matches_kind_filter_enum() {
 }
 
 #[test]
+fn matches_kind_filter_interface_kinded_enum() {
+    let reader = build_property_kind_index();
+    let index = reader.index();
+    let direction = resolve_symbols(index, "Direction");
+    assert!(!direction.is_empty());
+    assert!(matches_kind_filter(direction[0], "enum"), "Interface-kinded enum should match 'enum'");
+    assert!(!matches_kind_filter(direction[0], "class"));
+    assert!(!matches_kind_filter(direction[0], "case-class"));
+    assert!(!matches_kind_filter(direction[0], "interface"), "enum should not match 'interface'");
+}
+
+#[test]
 fn matches_kind_filter_plain_class() {
     let reader = build_property_kind_index();
     let index = reader.index();
@@ -173,6 +187,14 @@ fn display_kind_case_class() {
     let index = reader.index();
     let config = resolve_symbols(index, "Config");
     assert_eq!(display_kind(config[0]), "case class");
+}
+
+#[test]
+fn display_kind_interface_kinded_enum() {
+    let reader = build_property_kind_index();
+    let index = reader.index();
+    let direction = resolve_symbols(index, "Direction");
+    assert_eq!(display_kind(direction[0]), "enum");
 }
 
 #[test]
