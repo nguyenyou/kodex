@@ -128,6 +128,8 @@ kodex search handleReq                            # substring
 kodex search hcf                                  # CamelCase: HttpClientFactory
 kodex search processPyment                        # typo correction
 kodex search OrderService --kind trait            # filter by kind
+kodex search Config --kind case-class            # only case classes
+kodex search Status --kind enum                  # only Scala 3 enums
 kodex search OrderService --module storage        # filter by module
 kodex search Component.Backend.render             # nested owner.member
 ```
@@ -137,11 +139,12 @@ kodex search Component.Backend.render             # nested owner.member
 ```bash
 kodex search --module auth                        # all symbols in auth module
 kodex search --module auth --kind trait           # all traits in auth module
-kodex search --module billing.jvm --kind class    # all classes in billing JVM module
+kodex search --module billing.jvm --kind class       # all classes in billing JVM module
+kodex search --module billing.jvm --kind case-class  # only case classes in billing
 ```
 
 **Flags:**
-- `--kind`: class, trait, object, method, field, type, constructor
+- `--kind`: class, case-class, trait, object, method, field, type, constructor, enum
 - `--module`: substring match, or dotted segments in order (e.g. `storage.jvm` matches `modules.storage.storage.jvm`)
 - `--limit`: default 50 (0=unlimited)
 - `--include-noise`: include noise (generated code, plumbing methods, etc.) — excluded by default
@@ -415,7 +418,7 @@ kodex search Query --include-noise
 
 | Flag | Commands | Default | Description |
 |---|---|---|---|
-| `--kind K` | search | all | class, trait, object, method, field, type, constructor |
+| `--kind K` | search | all | class, case-class, trait, object, method, field, type, constructor, enum |
 | `--module M` | search | all | Substring or dotted segment match on module name |
 | `--limit N` | search, refs, noise | 50 / 100 / 15 | Max results (0=unlimited) |
 | `--depth N` | calls, trace | 3 | Call tree recursion depth |
@@ -465,6 +468,14 @@ kodex refs 'com/example/PaymentService#'
 ```bash
 kodex search Repository --kind trait
 kodex info 'com/example/Repository#'                    # Implementations section lists them
+```
+
+**Find case classes or enums:**
+```bash
+kodex search Config --kind case-class              # case classes matching "Config"
+kodex search --module auth --kind case-class       # all case classes in auth module
+kodex search Status --kind enum                    # Scala 3 enums matching "Status"
+kodex search --kind class                          # --kind class still returns ALL classes
 ```
 
 **Explore a specific module:**
