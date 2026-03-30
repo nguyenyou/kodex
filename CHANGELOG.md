@@ -2,6 +2,13 @@
 
 ## [Unreleased]
 
+### Added
+- `search --module <M>` without a query argument — lists all symbols in a module, filtered by `--kind` and `--limit`
+- Kind-aware suggestions — when `--kind` filter yields no results but the query matches symbols of other kinds, shows "Found under other kinds" with matching symbols
+
+### Changed
+- `--kind` filter in `search` is now strict — returns no results (with suggestions) instead of silently falling back to unfiltered results
+
 ## [1.1.0] — 2026-03-30
 
 ### Changed
