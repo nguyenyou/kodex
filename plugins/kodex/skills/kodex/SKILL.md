@@ -66,8 +66,8 @@ overview → search → info → calls/refs
 
 1. **`overview`** — see modules and codebase size. Always run first.
 2. **`search`** — find symbols by name. Copy FQNs from the output.
-3. **`info`** — paste an FQN, get the complete picture. Always use `--noise-filter`.
-4. **`calls`** / **`refs`** — go deeper when info's capped preview isn't enough. Always use `--noise-filter` with `calls`.
+3. **`info`** — paste an FQN, get the complete picture. Noise is excluded by default.
+4. **`calls`** / **`refs`** — go deeper when info's capped preview isn't enough.
 
 **Key distinction:** `info` shows call graph (callers/callees) — best for **methods**. For **types** (class/trait), use `refs` to see where the type is used across the codebase.
 
@@ -94,7 +94,7 @@ Module names shown here work directly with `search --module`.
 ### `search` — find symbols by name
 
 ```bash
-kodex search <QUERY> [--kind K] [--module M] [--limit N] [--exclude "p1,p2"] [--noise-filter]
+kodex search <QUERY> [--kind K] [--module M] [--limit N] [--exclude "p1,p2"] [--include-noise]
 ```
 
 Finds symbols using a 9-step cascade — exact names, substrings, CamelCase abbreviations, typos:
@@ -113,7 +113,7 @@ kodex search Component.Backend.render             # nested owner.member
 - `--kind`: class, trait, object, method, field, type, constructor
 - `--module`: substring match, or dotted segments in order (e.g. `storage.jvm` matches `modules.storage.storage.jvm`)
 - `--limit`: default 50 (0=unlimited)
-- `--noise-filter`: excludes noisy utility symbols from results
+- `--include-noise`: include noise (generated code, plumbing methods, etc.) — excluded by default
 - `--exclude "p1,p2"`: manual comma-separated exclusion patterns
 
 **Output — single match** (enough to proceed, no further search needed):
@@ -136,10 +136,10 @@ Every result includes an FQN — copy it directly into `info`, `calls`, or `refs
 ### `info` — complete picture in one call
 
 ```bash
-kodex info '<FQN>' --noise-filter
+kodex info '<FQN>'
 ```
 
-The most powerful command. Returns everything about a symbol in structured sections:
+The most powerful command. Noise is excluded by default. Returns everything about a symbol in structured sections:
 
 ```
 method createOrder — modules.orders.orders.jvm — src/com/example/OrderService.scala:45-78
@@ -195,14 +195,14 @@ method createOrder — modules.orders.orders.jvm — src/com/example/OrderServic
 - Source code is included — you usually don't need a separate file read
 
 **Flags:**
-- `--noise-filter`: auto-excludes noisy utilities (recommended always)
-- `--exclude "p1,p2"`: manual exclusion (overrides --noise-filter if both set)
+- `--include-noise`: include noise (generated code, plumbing methods, etc.) — excluded by default
+- `--exclude "p1,p2"`: manual comma-separated exclusion patterns
 
 ### `calls` — call tree traversal
 
 ```bash
-kodex calls '<FQN>' --depth 3 --noise-filter           # downstream (callees)
-kodex calls '<FQN>' -r --depth 3 --noise-filter         # upstream (callers)
+kodex calls '<FQN>' --depth 3              # downstream (callees)
+kodex calls '<FQN>' -r --depth 3           # upstream (callers)
 ```
 
 Recursive call tree with box-drawing connectors:
@@ -224,8 +224,8 @@ createOrder
 **Flags:**
 - `--depth N`: default 3
 - `-r, --reverse`: walk callers instead of callees
-- `--noise-filter`: auto-exclude noise (recommended always)
-- `--exclude "p1,p2"`: manual exclusion
+- `--include-noise`: include noise (generated code, plumbing methods, etc.) — excluded by default
+- `--exclude "p1,p2"`: manual comma-separated exclusion patterns
 
 Use `calls` when `info`'s depth-1 preview (capped at 15) isn't enough.
 
@@ -270,21 +270,26 @@ Analyzes the index and categorizes noisy symbols in 5 categories:
 4. **Store ops** — CRUD methods on Repository/Store/DAO types
 5. **Infrastructure plumbing** — high fan-in on cross-cutting owner types
 
-Outputs a ready-to-use `--exclude` pattern. Run once on a new codebase, or just use `--noise-filter` which computes this automatically.
+Outputs a ready-to-use `--exclude` pattern. Run once on a new codebase to see what kodex considers noisy — though noise is already excluded by default.
 
 ## Noise filtering
 
-`--noise-filter` auto-computes and applies noise exclusion. Use it by default on `info`, `calls`, and `search`:
+Noise is **excluded by default** — no flag needed. This covers:
+
+- Generated code and plumbing methods
+- stdlib (scala/\*, java/\*), test files, generated files
+- Plumbing methods (apply, map, flatMap, etc.), synthetic symbols
+- Boilerplate parents (Object, Product, Serializable)
+
+To **include** noise in results, pass `--include-noise`:
 
 ```bash
-kodex info '<FQN>' --noise-filter
-kodex calls '<FQN>' --depth 3 --noise-filter
-kodex search Query --noise-filter
+kodex info '<FQN>' --include-noise
+kodex calls '<FQN>' --depth 3 --include-noise
+kodex search Query --include-noise
 ```
 
-`--exclude "Pattern1,Pattern2"` gives manual control. If both are passed, `--exclude` takes precedence.
-
-kodex also **automatically** filters (no flag needed): stdlib (scala/\*, java/\*), test files, generated files, plumbing methods (apply, map, flatMap, etc.), synthetic symbols, boilerplate parents (Object, Product, Serializable).
+`--exclude "Pattern1,Pattern2"` gives additional manual control for custom exclusion patterns.
 
 ## FQN format
 
@@ -306,8 +311,8 @@ kodex also **automatically** filters (no flag needed): stdlib (scala/\*, java/\*
 | `--limit N` | search, refs, noise | 50 / 100 / 15 | Max results (0=unlimited) |
 | `--depth N` | calls | 3 | Call tree recursion depth |
 | `-r, --reverse` | calls | off | Walk callers instead of callees |
-| `--noise-filter` | search, info, calls | off | Auto-exclude noise (use by default) |
-| `--exclude P` | search, info, calls | — | Manual comma-separated patterns (overrides --noise-filter) |
+| `--include-noise` | search, info, calls | off | Include noise (generated code, plumbing) — excluded by default |
+| `--exclude P` | search, info, calls | — | Manual comma-separated exclusion patterns |
 | `--root PATH` | index | `.` | Workspace root |
 | `--idx PATH` | all | `.scalex/kodex.idx` | Override index path (or `KODEX_IDX` env var) |
 
@@ -317,26 +322,26 @@ kodex also **automatically** filters (no flag needed): stdlib (scala/\*, java/\*
 ```bash
 kodex overview
 kodex search MainService
-kodex info 'com/example/MainService#' --noise-filter
+kodex info 'com/example/MainService#'
 ```
 
 **Answer "how does feature X work?":**
 ```bash
 kodex search createOrder
-kodex info 'com/example/Service#createOrder().' --noise-filter
-kodex calls 'com/example/Service#createOrder().' --depth 3 --noise-filter
+kodex info 'com/example/Service#createOrder().'
+kodex calls 'com/example/Service#createOrder().' --depth 3
 ```
 
 **Assess change risk ("what breaks if I change X?"):**
 ```bash
-kodex calls 'com/example/PaymentService#process().' -r --depth 2 --noise-filter
+kodex calls 'com/example/PaymentService#process().' -r --depth 2
 kodex refs 'com/example/PaymentService#'
 ```
 
 **Find all implementations of a trait:**
 ```bash
 kodex search Repository --kind trait
-kodex info 'com/example/Repository#' --noise-filter    # Implementations section lists them
+kodex info 'com/example/Repository#'                    # Implementations section lists them
 ```
 
 **Explore a specific module:**
@@ -350,7 +355,7 @@ kodex search Service --kind trait --module auth
 - **No .semanticdb files**: Run the SemanticDB generation step for your build tool first.
 - **Stale results**: Re-run SemanticDB generation, then `kodex index --root .`
 - **Index not found**: Run `kodex index --root .`
-- **Too much noise**: Use `--noise-filter`, or run `kodex noise` for manual `--exclude`.
+- **Too much noise**: Noise is excluded by default. For additional control, run `kodex noise` to find patterns for `--exclude`.
 - **Symbol not found**: Try a shorter substring, CamelCase abbreviation, or `Owner.member` syntax.
 - **info/calls/refs "Not found"**: These need exact FQNs. Run `search` first, then copy the FQN.
 - **Shell errors with FQNs**: Single-quote FQNs: `kodex info 'com/example/Foo#bar().'`
