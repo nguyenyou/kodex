@@ -136,17 +136,20 @@ enum Command {
 }
 
 fn main() -> ExitCode {
-    match run() {
-        Ok(()) => ExitCode::SUCCESS,
+    let cli = match Cli::try_parse() {
+        Ok(cli) => cli,
         Err(e) => {
-            eprintln!("Error: {e:#}");
-            ExitCode::from(2)
+            println!("Error: {e}");
+            return ExitCode::SUCCESS;
         }
+    };
+    if let Err(e) = run(cli) {
+        println!("Error: {e:#}");
     }
+    ExitCode::SUCCESS
 }
 
-fn run() -> anyhow::Result<()> {
-    let cli = Cli::parse();
+fn run(cli: Cli) -> anyhow::Result<()> {
 
     match cli.command {
         Command::Overview => {
