@@ -395,7 +395,7 @@ fn test_is_synthetic_name() {
 fn cmd_search_found() {
     let reader = build_test_index();
     let index = reader.index();
-    let out = kodex::query::commands::search::cmd_search(index, "Service", 50, None, None, &[]);
+    let out = kodex::query::commands::search::cmd_search(index, "Service", 50, None, None, &[], true);
     assert!(out.is_found());
     assert!(out.output().contains("Service"));
 }
@@ -404,7 +404,7 @@ fn cmd_search_found() {
 fn cmd_search_not_found() {
     let reader = build_test_index();
     let index = reader.index();
-    let out = kodex::query::commands::search::cmd_search(index, "NonExistent", 50, None, None, &[]);
+    let out = kodex::query::commands::search::cmd_search(index, "NonExistent", 50, None, None, &[], true);
     assert!(!out.is_found());
 }
 
@@ -412,7 +412,7 @@ fn cmd_search_not_found() {
 fn cmd_search_kind_filter() {
     let reader = build_test_index();
     let index = reader.index();
-    let out = kodex::query::commands::search::cmd_search(index, "Service", 50, Some("trait"), None, &[]);
+    let out = kodex::query::commands::search::cmd_search(index, "Service", 50, Some("trait"), None, &[], true);
     assert!(out.is_found());
     assert!(out.output().contains("trait"));
 }
@@ -422,11 +422,11 @@ fn cmd_search_with_exclude() {
     let reader = build_test_index();
     let index = reader.index();
     // "process" matches methods in both Service and ServiceImpl
-    let out = kodex::query::commands::search::cmd_search(index, "process", 50, None, None, &[]);
+    let out = kodex::query::commands::search::cmd_search(index, "process", 50, None, None, &[], true);
     assert!(out.is_found());
     // Exclude ServiceImpl — should only show Service's process
     let out = kodex::query::commands::search::cmd_search(
-        index, "process", 50, None, None, &["ServiceImpl".to_string()],
+        index, "process", 50, None, None, &["ServiceImpl".to_string()], true,
     );
     assert!(out.is_found());
     assert!(!out.output().contains("ServiceImpl"));
@@ -439,7 +439,7 @@ fn search_multi_match_shows_file_and_line() {
     let reader = build_rich_index();
     let index = reader.index();
     // "speak" matches methods in both Animal (line 4) and Dog (line 5)
-    let out = kodex::query::commands::search::cmd_search(index, "speak", 50, None, None, &[]);
+    let out = kodex::query::commands::search::cmd_search(index, "speak", 50, None, None, &[], true);
     assert!(out.is_found());
     insta::assert_snapshot!(out.output());
 }
@@ -449,7 +449,7 @@ fn search_single_match_detail_shows_file_and_line() {
     let reader = build_rich_index();
     let index = reader.index();
     // "Animal" with --kind trait → single match, detail view
-    let out = kodex::query::commands::search::cmd_search(index, "Animal", 50, Some("trait"), None, &[]);
+    let out = kodex::query::commands::search::cmd_search(index, "Animal", 50, Some("trait"), None, &[], true);
     assert!(out.is_found());
     insta::assert_snapshot!(out.output());
 }
@@ -459,7 +459,7 @@ fn search_single_match_method_shows_line_range() {
     let reader = build_rich_index();
     let index = reader.index();
     // "bark" → single method, should show line-end_line range
-    let out = kodex::query::commands::search::cmd_search(index, "bark", 50, None, None, &[]);
+    let out = kodex::query::commands::search::cmd_search(index, "bark", 50, None, None, &[], true);
     assert!(out.is_found());
     insta::assert_snapshot!(out.output());
 }
@@ -546,7 +546,7 @@ fn build_val_vs_def_index() -> common::TestIndex {
 fn search_finds_both_val_and_def_methods() {
     let reader = build_val_vs_def_index();
     let index = reader.index();
-    let out = kodex::query::commands::search::cmd_search(index, "createOrder", 50, None, None, &[]);
+    let out = kodex::query::commands::search::cmd_search(index, "createOrder", 50, None, None, &[], true);
     assert!(out.is_found());
     // Must find BOTH the val endpoint AND the def method
     assert!(
@@ -592,12 +592,15 @@ fn info_rejects_short_name() {
 // ── generated file handling ─────────────────────────────────────────────────
 
 #[test]
-fn cmd_search_includes_generated() {
+fn cmd_search_excludes_generated_by_default() {
     let reader =
         common::build_and_load_index(common::make_billing_with_generated_docs());
     let index = reader.index();
-    // Generated files are always included in search results
-    let out = kodex::query::commands::search::cmd_search(index, "ServiceProto", 50, None, None, &[]);
+    // Generated files are excluded from search results by default
+    let out = kodex::query::commands::search::cmd_search(index, "ServiceProto", 50, None, None, &[], false);
+    assert!(!out.is_found());
+    // But included when include_noise is true
+    let out = kodex::query::commands::search::cmd_search(index, "ServiceProto", 50, None, None, &[], true);
     assert!(out.is_found());
 }
 

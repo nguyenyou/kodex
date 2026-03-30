@@ -60,9 +60,9 @@ struct QueryArgs {
 struct ExcludeArgs {
     #[arg(long)]
     exclude: Option<String>,
-    /// Auto-exclude noise (same as running `noise` and using its suggested --exclude)
+    /// Include noise (generated code, plumbing methods, etc.) — excluded by default
     #[arg(long)]
-    noise_filter: bool,
+    include_noise: bool,
 }
 
 // ── CLI definition ──────────────────────────────────────────────────────────
@@ -170,6 +170,7 @@ fn run() -> anyhow::Result<()> {
                 q.kind.as_ref().map(SymbolKindArg::as_str),
                 q.module.as_deref(),
                 &exclude,
+                excl.include_noise,
             ));
             Ok(())
         }
@@ -312,14 +313,20 @@ fn parse_exclude(exclude: Option<&String>) -> Vec<String> {
         .unwrap_or_default()
 }
 
-/// Resolve exclude patterns: --exclude takes precedence, --noise-filter auto-computes.
+/// Resolve exclude patterns: noise filtering is on by default, --include-noise disables it.
 fn resolve_exclude(excl: &ExcludeArgs, index: &kodex::model::ArchivedKodexIndex) -> Vec<String> {
-    if excl.exclude.is_some() {
+    if excl.include_noise {
+        // User explicitly wants noise — only apply manual --exclude if given
         parse_exclude(excl.exclude.as_ref())
-    } else if excl.noise_filter {
+    } else if excl.exclude.is_some() {
+        // Manual exclude provided — apply both manual + auto noise
+        let mut patterns = parse_exclude(excl.exclude.as_ref());
+        let noise = query::commands::noise::compute_noise_exclude(index);
+        patterns.extend(parse_exclude(Some(&noise)));
+        patterns
+    } else {
+        // Default: auto-compute noise exclude
         let pattern = query::commands::noise::compute_noise_exclude(index);
         parse_exclude(Some(&pattern))
-    } else {
-        vec![]
     }
 }
