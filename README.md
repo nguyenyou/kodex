@@ -5,7 +5,7 @@
 
 # kodex
 
-**K**nowledge + C**ode** + Inde**x** = **Kodex.** Compiler-precise code intelligence for Scala, built in Rust.
+**K**nowledge + C**ode** + Inde**x** = **Kodex.** Compiler-precise Scala code intelligence for coding agents.
 
 **Best for:** codebase Q&A, knowledge base generation, onboarding to unfamiliar code, production spec sync.
 
