@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [1.5.0] — 2026-03-30
+
 ### Added
 - **`--kind case-class`** — filters search results to only case classes (uses `PROP_CASE` property bit)
 - **`--kind enum`** — filters search results to only Scala 3 enums (uses `PROP_ENUM` property bit); also matches `Interface`-kinded enums from SemanticDB
