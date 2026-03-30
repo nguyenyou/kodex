@@ -1,0 +1,6 @@
+---
+source: tests/command_coverage.rs
+expression: out.output()
+---
+process [modules.billing]
+└── ServiceImpl.save [modules.billing]

@@ -1,0 +1,824 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>kodex — Compiler-Precise Scala Code Intelligence</title>
+
+    <meta
+      name="description"
+      content="Compiler-precise code intelligence for Scala, built in Rust. Best for codebase Q&A, knowledge base generation, onboarding to unfamiliar code, production spec sync."
+    />
+
+    <!-- OpenGraph -->
+    <meta
+      property="og:title"
+      content="kodex — Compiler-Precise Scala Code Intelligence"
+    />
+    <meta
+      property="og:description"
+      content="Compiler-precise. Built in Rust. Let AI agents read your production codebase."
+    />
+    <meta
+      property="og:image"
+      content="https://nguyenyou.github.io/kodex/og-banner.png"
+    />
+    <meta property="og:url" content="https://nguyenyou.github.io/kodex" />
+    <meta property="og:type" content="website" />
+
+    <!-- Twitter Card -->
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta
+      name="twitter:title"
+      content="kodex — Compiler-Precise Scala Code Intelligence"
+    />
+    <meta
+      name="twitter:description"
+      content="Compiler-precise. Built in Rust. Let AI agents read your production codebase."
+    />
+    <meta
+      name="twitter:image"
+      content="https://nguyenyou.github.io/kodex/og-banner.png"
+    />
+
+    <link rel="icon" type="image/png" sizes="32x32" href="favicon-32.png" />
+    <link rel="apple-touch-icon" sizes="180x180" href="apple-touch-icon.png" />
+
+    <!-- Fonts: Cormorant Garamond for display (Norse/literary feel), IBM Plex Mono for code -->
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,600;0,700;1,400&family=IBM+Plex+Mono:wght@400;500;600&display=swap"
+      rel="stylesheet"
+    />
+
+    <style>
+      :root {
+        --bg-void: #050508;
+        --bg-primary: #0a0a10;
+        --bg-card: #0e0e18;
+        --bg-code: #111120;
+        --text-primary: #d8d5cf;
+        --text-secondary: #8a8694;
+        --text-dim: #55516a;
+        --raven-blue: #4a7cf7;
+        --raven-blue-dim: rgba(74, 124, 247, 0.12);
+        --raven-blue-glow: rgba(74, 124, 247, 0.25);
+        --raven-eye: #5b9aff;
+        --accent-warm: #c4956a;
+        --accent-green: #6ec4a7;
+        --border: #1a1a2a;
+        --border-glow: rgba(74, 124, 247, 0.15);
+
+        --font-display: "Cormorant Garamond", Georgia, serif;
+        --font-mono: "IBM Plex Mono", monospace;
+        --font-body: "IBM Plex Mono", monospace;
+      }
+
+      * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+      }
+
+      html {
+        scroll-behavior: smooth;
+      }
+
+      body {
+        background: var(--bg-void);
+        color: var(--text-primary);
+        font-family: var(--font-body);
+        font-size: clamp(0.8rem, 1.2vw, 1rem);
+        line-height: 1.7;
+        overflow-x: hidden;
+      }
+
+      /* ── Noise texture overlay ── */
+      body::before {
+        content: "";
+        position: fixed;
+        inset: 0;
+        background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.03'/%3E%3C/svg%3E");
+        pointer-events: none;
+        z-index: 9999;
+      }
+
+      a {
+        color: var(--raven-blue);
+        text-decoration: none;
+        transition: color 0.2s;
+      }
+      a:hover {
+        color: var(--raven-eye);
+      }
+
+      /* ── Hero ── */
+      .hero {
+        min-height: 100vh;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        padding: clamp(2rem, 5vw, 6rem) clamp(1.5rem, 5vw, 4rem);
+        position: relative;
+        text-align: center;
+      }
+
+      .hero::after {
+        content: "";
+        position: absolute;
+        bottom: 0;
+        left: 0;
+        right: 0;
+        height: 1px;
+        background: linear-gradient(
+          90deg,
+          transparent,
+          var(--border-glow),
+          transparent
+        );
+      }
+
+      /* Atmospheric glow behind mascot */
+      .hero-glow {
+        position: absolute;
+        width: 600px;
+        height: 600px;
+        border-radius: 50%;
+        background: radial-gradient(
+          circle,
+          var(--raven-blue-dim) 0%,
+          transparent 70%
+        );
+        top: 50%;
+        left: 50%;
+        transform: translate(-50%, -55%);
+        pointer-events: none;
+        animation: breathe 8s ease-in-out infinite;
+      }
+
+      @keyframes breathe {
+        0%,
+        100% {
+          opacity: 0.4;
+          transform: translate(-50%, -55%) scale(1);
+        }
+        50% {
+          opacity: 0.7;
+          transform: translate(-50%, -55%) scale(1.05);
+        }
+      }
+
+      .hero-mascot {
+        position: relative;
+        z-index: 1;
+        width: clamp(280px, 45vw, 520px);
+        margin-bottom: clamp(1.5rem, 3vw, 3rem);
+        animation: fadeUp 1s ease-out;
+      }
+
+      .hero-mascot img {
+        width: 100%;
+        height: auto;
+        border-radius: 12px;
+        filter: drop-shadow(0 0 40px rgba(74, 124, 247, 0.08));
+      }
+
+      .hero-title {
+        position: relative;
+        z-index: 1;
+        font-family: var(--font-display);
+        font-size: clamp(3rem, 8vw, 7rem);
+        font-weight: 700;
+        letter-spacing: 0.06em;
+        line-height: 1;
+        margin-bottom: 0.3em;
+        animation: fadeUp 1s ease-out 0.15s both;
+      }
+
+      .hero-title .k {
+        color: var(--raven-blue);
+      }
+
+      .hero-subtitle {
+        position: relative;
+        z-index: 1;
+        font-family: var(--font-display);
+        font-size: clamp(1.1rem, 2.5vw, 1.8rem);
+        font-weight: 400;
+        font-style: italic;
+        color: var(--text-secondary);
+        max-width: 600px;
+        margin-bottom: 1.5em;
+        animation: fadeUp 1s ease-out 0.3s both;
+      }
+
+      .hero-tags {
+        position: relative;
+        z-index: 1;
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.5rem;
+        justify-content: center;
+        animation: fadeUp 1s ease-out 0.45s both;
+      }
+
+      .tag {
+        font-family: var(--font-mono);
+        font-size: clamp(0.6rem, 0.9vw, 0.75rem);
+        padding: 0.35em 0.9em;
+        border: 1px solid var(--border);
+        border-radius: 999px;
+        color: var(--text-secondary);
+        background: var(--bg-card);
+        transition: all 0.3s;
+      }
+
+      .tag:hover {
+        border-color: var(--raven-blue);
+        color: var(--raven-blue);
+        box-shadow: 0 0 12px var(--raven-blue-dim);
+      }
+
+      @keyframes fadeUp {
+        from {
+          opacity: 0;
+          transform: translateY(24px);
+        }
+        to {
+          opacity: 1;
+          transform: translateY(0);
+        }
+      }
+
+      /* ── Scroll indicator ── */
+      .scroll-hint {
+        position: absolute;
+        bottom: clamp(1.5rem, 3vh, 3rem);
+        left: 50%;
+        transform: translateX(-50%);
+        z-index: 1;
+        animation: fadeUp 1s ease-out 0.8s both;
+      }
+
+      .scroll-hint span {
+        display: block;
+        width: 1px;
+        height: 40px;
+        background: linear-gradient(
+          to bottom,
+          var(--raven-blue),
+          transparent
+        );
+        margin: 0 auto;
+        animation: drip 2s ease-in-out infinite;
+      }
+
+      @keyframes drip {
+        0%,
+        100% {
+          opacity: 0.3;
+          transform: scaleY(0.6);
+        }
+        50% {
+          opacity: 1;
+          transform: scaleY(1);
+        }
+      }
+
+      /* ── Section layout ── */
+      section {
+        padding: clamp(4rem, 10vh, 8rem) clamp(1.5rem, 5vw, 4rem);
+        max-width: 860px;
+        margin: 0 auto;
+        position: relative;
+      }
+
+      section::before {
+        content: "";
+        position: absolute;
+        top: 0;
+        left: 50%;
+        transform: translateX(-50%);
+        width: 60%;
+        height: 1px;
+        background: linear-gradient(
+          90deg,
+          transparent,
+          var(--border),
+          transparent
+        );
+      }
+
+      .section-label {
+        font-family: var(--font-mono);
+        font-size: clamp(0.55rem, 0.8vw, 0.7rem);
+        text-transform: uppercase;
+        letter-spacing: 0.25em;
+        color: var(--raven-blue);
+        margin-bottom: 1rem;
+      }
+
+      .section-title {
+        font-family: var(--font-display);
+        font-size: clamp(1.8rem, 4vw, 3.2rem);
+        font-weight: 700;
+        line-height: 1.2;
+        margin-bottom: 1.5rem;
+      }
+
+      p {
+        color: var(--text-secondary);
+        margin-bottom: 1.2em;
+      }
+
+      p em {
+        color: var(--text-primary);
+        font-style: italic;
+      }
+
+      strong {
+        color: var(--text-primary);
+        font-weight: 600;
+      }
+
+      /* ── Quick Start ── */
+      .steps {
+        display: flex;
+        flex-direction: column;
+        gap: clamp(1.5rem, 3vw, 2.5rem);
+        margin-top: 2rem;
+      }
+
+      .step {
+        display: grid;
+        grid-template-columns: auto 1fr;
+        gap: 1rem;
+        align-items: start;
+      }
+
+      .step-icon {
+        font-size: 1.5rem;
+        line-height: 1;
+        padding-top: 0.15em;
+      }
+
+      .step-body h3 {
+        font-family: var(--font-display);
+        font-size: clamp(1.1rem, 2vw, 1.5rem);
+        font-weight: 600;
+        margin-bottom: 0.5rem;
+      }
+
+      .step-body .step-desc {
+        font-size: clamp(0.7rem, 1vw, 0.85rem);
+        color: var(--text-dim);
+        margin-bottom: 0.75rem;
+      }
+
+      pre {
+        background: var(--bg-code);
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        padding: 0.9em 1.2em;
+        font-family: var(--font-mono);
+        font-size: clamp(0.65rem, 1vw, 0.82rem);
+        overflow-x: auto;
+        color: var(--text-primary);
+        line-height: 1.6;
+      }
+
+      .note {
+        font-size: clamp(0.65rem, 0.9vw, 0.78rem);
+        color: var(--text-dim);
+        margin-top: 0.75rem;
+        padding-left: 1rem;
+        border-left: 2px solid var(--border);
+      }
+
+      /* ── Why section ── */
+      .why-highlight {
+        font-family: var(--font-display);
+        font-size: clamp(1.2rem, 2.5vw, 1.8rem);
+        font-style: italic;
+        color: var(--text-primary);
+        line-height: 1.5;
+        margin: 1.5rem 0;
+        padding-left: 1.5rem;
+        border-left: 3px solid var(--raven-blue);
+      }
+
+      .reading-badge {
+        display: inline-block;
+        font-family: var(--font-mono);
+        font-size: clamp(0.6rem, 0.85vw, 0.72rem);
+        padding: 0.3em 0.8em;
+        border: 1px solid var(--accent-warm);
+        border-radius: 4px;
+        color: var(--accent-warm);
+        margin-top: 0.5rem;
+      }
+
+      /* ── Workflows ── */
+      .workflow-grid {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: clamp(1rem, 2vw, 1.5rem);
+        margin-top: 2rem;
+      }
+
+      @media (max-width: 640px) {
+        .workflow-grid {
+          grid-template-columns: 1fr;
+        }
+      }
+
+      .workflow-card {
+        background: var(--bg-card);
+        border: 1px solid var(--border);
+        border-radius: 10px;
+        padding: clamp(1.2rem, 2.5vw, 2rem);
+        transition: border-color 0.3s, box-shadow 0.3s;
+      }
+
+      .workflow-card:hover {
+        border-color: var(--raven-blue);
+        box-shadow: 0 0 30px var(--raven-blue-dim);
+      }
+
+      .workflow-card h3 {
+        font-family: var(--font-display);
+        font-size: clamp(1rem, 1.8vw, 1.3rem);
+        font-weight: 600;
+        margin-bottom: 0.75rem;
+        color: var(--text-primary);
+      }
+
+      .workflow-card p {
+        font-size: clamp(0.7rem, 1vw, 0.85rem);
+        margin-bottom: 0;
+      }
+
+      .workflow-label {
+        font-family: var(--font-mono);
+        font-size: clamp(0.5rem, 0.7vw, 0.62rem);
+        text-transform: uppercase;
+        letter-spacing: 0.15em;
+        color: var(--accent-green);
+        margin-bottom: 0.5rem;
+      }
+
+      /* ── Comparison ── */
+      .pipeline-diagram {
+        background: var(--bg-code);
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        padding: 1.5em 2em;
+        font-family: var(--font-mono);
+        font-size: clamp(0.6rem, 1vw, 0.8rem);
+        line-height: 1.8;
+        margin: 2rem 0;
+        overflow-x: auto;
+        white-space: pre;
+        color: var(--text-secondary);
+      }
+
+      .pipeline-diagram .tool-name {
+        color: var(--text-primary);
+        font-weight: 600;
+      }
+
+      .pipeline-diagram .dim {
+        color: var(--text-dim);
+      }
+
+      .comparison-table {
+        width: 100%;
+        border-collapse: collapse;
+        margin: 1.5rem 0;
+        font-size: clamp(0.65rem, 1vw, 0.82rem);
+      }
+
+      .comparison-table th {
+        font-family: var(--font-display);
+        font-size: clamp(0.9rem, 1.5vw, 1.15rem);
+        font-weight: 600;
+        text-align: left;
+        padding: 0.75em 1em;
+        border-bottom: 2px solid var(--border);
+        color: var(--text-primary);
+      }
+
+      .comparison-table td {
+        padding: 0.65em 1em;
+        border-bottom: 1px solid var(--border);
+        color: var(--text-secondary);
+        vertical-align: top;
+      }
+
+      .comparison-table td:first-child {
+        color: var(--text-dim);
+        font-family: var(--font-mono);
+        font-size: clamp(0.6rem, 0.9vw, 0.72rem);
+        white-space: nowrap;
+      }
+
+      .comparison-table tbody tr:hover td {
+        color: var(--text-primary);
+      }
+
+      .comparison-note {
+        margin-top: 1.5rem;
+        color: var(--text-secondary);
+        font-size: clamp(0.7rem, 1vw, 0.85rem);
+      }
+
+      /* ── Credits ── */
+      .credits-list {
+        list-style: none;
+        margin-top: 1.5rem;
+      }
+
+      .credits-list li {
+        padding: 0.5em 0;
+        border-bottom: 1px solid var(--border);
+        font-size: clamp(0.7rem, 1vw, 0.85rem);
+        color: var(--text-secondary);
+      }
+
+      .credits-list li:last-child {
+        border-bottom: none;
+      }
+
+      /* ── Footer ── */
+      footer {
+        padding: clamp(2rem, 5vh, 4rem) clamp(1.5rem, 5vw, 4rem);
+        text-align: center;
+        color: var(--text-dim);
+        font-size: clamp(0.6rem, 0.8vw, 0.72rem);
+        position: relative;
+      }
+
+      footer::before {
+        content: "";
+        position: absolute;
+        top: 0;
+        left: 50%;
+        transform: translateX(-50%);
+        width: 40%;
+        height: 1px;
+        background: linear-gradient(
+          90deg,
+          transparent,
+          var(--border),
+          transparent
+        );
+      }
+
+      footer a {
+        color: var(--text-secondary);
+      }
+
+      .footer-logo {
+        width: 32px;
+        height: 32px;
+        border-radius: 50%;
+        margin-bottom: 0.75rem;
+        opacity: 0.5;
+      }
+
+      /* ── Scroll animations ── */
+      .reveal {
+        opacity: 0;
+        transform: translateY(20px);
+        transition: opacity 0.7s ease-out, transform 0.7s ease-out;
+      }
+
+      .reveal.visible {
+        opacity: 1;
+        transform: translateY(0);
+      }
+    </style>
+  </head>
+
+  <body>
+    <!-- ────────────── Hero ────────────── -->
+    <div class="hero">
+      <div class="hero-glow"></div>
+      <div class="hero-mascot">
+        <img
+          src="banner-transparent.png"
+          alt="kodex raven mascot — perched on an open book of code"
+        />
+      </div>
+      <h1 class="hero-title"><span class="k">k</span>odex</h1>
+      <p class="hero-subtitle">
+        Compiler-precise code intelligence for Scala, built in Rust.
+      </p>
+      <div class="hero-tags">
+        <span class="tag">codebase Q&amp;A</span>
+        <span class="tag">knowledge base generation</span>
+        <span class="tag">onboarding</span>
+        <span class="tag">production spec sync</span>
+      </div>
+      <div class="scroll-hint"><span></span></div>
+    </div>
+
+    <!-- ────────────── Why ────────────── -->
+    <section>
+      <div class="reveal">
+        <div class="section-label">Why</div>
+        <h2 class="section-title">Stop asking engineers.<br />Ask the codebase.</h2>
+        <p>
+          I work across many domains and products at work &mdash; codebases I
+          don't have deep knowledge about. The usual workflow: figure out how to
+          set something up, realize I don't know how, go find the engineer who
+          owns that domain and ask them. That's friction.
+        </p>
+        <div class="why-highlight">
+          How do I create X? How does Y work? What are the requirements for Z to
+          be properly set up?
+        </div>
+        <p>
+          I built kodex so that <strong>Claude Code</strong> can answer those
+          questions instead. It traces through the compiled codebase and gives me
+          a precise answer.
+        </p>
+        <div class="reading-badge">Built for reading code, not writing code</div>
+      </div>
+    </section>
+
+    <!-- ────────────── Quick Start ────────────── -->
+    <section>
+      <div class="reveal">
+        <div class="section-label">Quick Start</div>
+        <h2 class="section-title">Three steps to flight</h2>
+        <div class="steps">
+          <div class="step">
+            <div class="step-icon">&#x1F33E;</div>
+            <div class="step-body">
+              <h3>Feed the raven</h3>
+              <p class="step-desc">Compile SemanticDB data</p>
+              <pre>./mill __.semanticDbData</pre>
+              <p class="note">
+                Also works with <strong>sbt</strong> and
+                <strong>scala-cli</strong> &mdash; kodex knows how to set those
+                up too. I encourage you to run the compile yourself so you stay
+                in control of the build.
+              </p>
+            </div>
+          </div>
+          <div class="step">
+            <div class="step-icon">&#x1FAB6;</div>
+            <div class="step-body">
+              <h3>Summon it</h3>
+              <p class="step-desc">Install the Claude Code plugin</p>
+              <pre>/plugin marketplace add nguyenyou/kodex
+/plugin install kodex@kodex-marketplace</pre>
+            </div>
+          </div>
+          <div class="step">
+            <div class="step-icon">&#x1F680;</div>
+            <div class="step-body">
+              <h3>Let it fly</h3>
+              <p class="step-desc">Ask away</p>
+              <pre>use kodex to explore how authentication works in this codebase</pre>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ────────────── Workflows ────────────── -->
+    <section>
+      <div class="reveal">
+        <div class="section-label">Workflows</div>
+        <h2 class="section-title">Two ways to use it</h2>
+        <div class="workflow-grid">
+          <div class="workflow-card">
+            <div class="workflow-label">Automated</div>
+            <h3>Knowledge base generator</h3>
+            <p>
+              A server runs daily/weekly to clone the production codebase,
+              compile SemanticDB, and let an AI agent generate product specs.
+              Specs stay in sync with actual code &mdash; generated from code,
+              not the other way around.
+            </p>
+          </div>
+          <div class="workflow-card">
+            <div class="workflow-label">What I use</div>
+            <h3>Read-only explorer</h3>
+            <p>
+              Keep two clones of the production codebase:
+              a <strong>read-only clone</strong> compiled with SemanticDB for
+              understanding, and a <strong>working clone</strong> where you write
+              code. Your index stays stable.
+            </p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ────────────── Comparison ────────────── -->
+    <section>
+      <div class="reveal">
+        <div class="section-label">Comparison</div>
+        <h2 class="section-title">scalex vs kodex</h2>
+        <div class="pipeline-diagram"><span class="tool-name">scalex</span>:  .scala &#x2500;&#x25B6; Parser &#x2500;&#x25B6; AST &#x2500;&#x25B6; Index &amp; Query
+<span class="tool-name">kodex</span>:   .scala &#x2500;&#x25B6; Compiler &#x2500;&#x25B6; SemanticDB &#x2500;&#x25B6; Index &amp; Query
+                   <span class="dim">(expensive)   (precise)</span></div>
+        <table class="comparison-table">
+          <thead>
+            <tr>
+              <th></th>
+              <th>scalex</th>
+              <th>kodex</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>Setup cost</td>
+              <td>None &mdash; instant on any Scala codebase</td>
+              <td>Requires a full compile</td>
+            </tr>
+            <tr>
+              <td>Accuracy</td>
+              <td>Best-effort (unresolved implicits, overloads)</td>
+              <td>Compiler-precise &mdash; every symbol resolved</td>
+            </tr>
+            <tr>
+              <td>First query</td>
+              <td>Seconds</td>
+              <td>Minutes (compile time)</td>
+            </tr>
+            <tr>
+              <td>Best for</td>
+              <td>Quick exploration, reading unfamiliar code</td>
+              <td>Deep understanding, production codebases</td>
+            </tr>
+          </tbody>
+        </table>
+        <p class="comparison-note">
+          I use both. <strong>scalex</strong> is my default for open source
+          projects and libraries &mdash; no setup, instant answers. Opus 4.6 is
+          good enough at reasoning that AST + source code alone is more than
+          enough to explain how a project works. <strong>kodex</strong> is for
+          production codebases where I already compile the code for work, so the
+          cost is paid and I want compiler-precise accuracy.
+        </p>
+      </div>
+    </section>
+
+    <!-- ────────────── Credits ────────────── -->
+    <section>
+      <div class="reveal">
+        <div class="section-label">Credits</div>
+        <h2 class="section-title">Standing on giants</h2>
+        <ul class="credits-list">
+          <li>
+            <a href="https://github.com/scala/scala3">Scala</a> &amp;
+            <a href="https://github.com/scalameta/scalameta">Scalameta</a>
+            &mdash; for building
+            <a href="https://scalameta.org/docs/semanticdb/guide.html"
+              >SemanticDB</a
+            >, the compiler output format that makes this tool possible.
+          </li>
+          <li>
+            <a href="https://github.com/scalameta/metals">Metals</a> &mdash;
+            for showing how to compile SemanticDB across sbt and scala-cli
+            projects.
+          </li>
+          <li>
+            Built with
+            <a href="https://claude.com/claude-code">Claude Code</a> (Opus
+            4.6).
+          </li>
+        </ul>
+      </div>
+    </section>
+
+    <!-- ────────────── Footer ────────────── -->
+    <footer>
+      <img src="logo.png" alt="kodex raven" class="footer-logo" /><br />
+      <a href="https://github.com/nguyenyou/kodex">GitHub</a> &middot; MIT
+      License &middot; 2026
+    </footer>
+
+    <script>
+      // Intersection Observer for scroll reveal
+      const observer = new IntersectionObserver(
+        (entries) => {
+          entries.forEach((entry) => {
+            if (entry.isIntersecting) {
+              entry.target.classList.add("visible");
+            }
+          });
+        },
+        { threshold: 0.15 }
+      );
+
+      document.querySelectorAll(".reveal").forEach((el) => observer.observe(el));
+    </script>
+  </body>
+</html>

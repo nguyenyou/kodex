@@ -1,0 +1,11 @@
+Complete picture of a type or method (members + callers + callees + related)
+
+Usage: kodex info [OPTIONS] <FQN>
+
+Arguments:
+  <FQN>  Symbol FQN (from search results)
+
+Options:
+      --exclude <EXCLUDE>  
+      --idx <IDX>          Path to kodex.idx (default: .scalex/kodex.idx, or `KODEX_IDX` env var)
+  -h, --help               Print help

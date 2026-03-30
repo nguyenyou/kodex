@@ -1,0 +1,19 @@
+---
+source: tests/command_coverage.rs
+assertion_line: 257
+expression: out.output()
+---
+trait Service [modules.billing] — modules/billing/src/com/example/Service.scala:4
+  fqn: com/example/Service#
+  referenced: 2 sites across 1 modules
+  properties: abstract
+
+  Signature: trait Service
+
+  Members (1):
+    def process(): Unit
+      fqn: com/example/Service#process().
+
+  Implementations (1):
+    class ServiceImpl — modules/billing/src/com/example/ServiceImpl.scala
+      fqn: com/example/ServiceImpl#

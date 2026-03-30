@@ -1,0 +1,13 @@
+Call tree: downstream (default) or upstream (--reverse)
+
+Usage: kodex calls [OPTIONS] <FQN>
+
+Arguments:
+  <FQN>  Symbol FQN (from search results)
+
+Options:
+      --depth <DEPTH>      [default: 3]
+      --idx <IDX>          Path to kodex.idx (default: .scalex/kodex.idx, or `KODEX_IDX` env var)
+  -r, --reverse            Walk upstream (callers) instead of downstream (callees)
+      --exclude <EXCLUDE>
+  -h, --help               Print help

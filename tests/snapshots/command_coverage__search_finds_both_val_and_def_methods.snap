@@ -1,0 +1,9 @@
+---
+source: tests/command_coverage.rs
+expression: out.output()
+---
+2 symbols matching 'createOrder'
+  method createOrder [val] (api/OrderEndpoints.scala:11)
+    fqn: com/example/OrderEndpoints.createOrder.
+  method createOrder (service/OrderService.scala:13)
+    fqn: com/example/OrderService#createOrder().

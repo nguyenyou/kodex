@@ -1,0 +1,8 @@
+Build kodex.idx from a compiled project's `SemanticDB` and Mill metadata
+
+Usage: kodex index [OPTIONS]
+
+Options:
+      --idx <IDX>    Path to kodex.idx (default: .scalex/kodex.idx, or `KODEX_IDX` env var)
+      --root <ROOT>  Workspace root (must contain Mill out/ directory) [default: .]
+  -h, --help         Print help

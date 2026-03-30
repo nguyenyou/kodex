@@ -1,0 +1,10 @@
+{
+  "name": "kodex",
+  "description": "Compiler-precise Scala code intelligence CLI — call graphs, impact analysis, flow tracing, module dependencies from SemanticDB",
+  "author": {
+    "name": "Tu Nguyen"
+  },
+  "repository": "https://github.com/nguyenyou/kodex",
+  "license": "MIT",
+  "keywords": ["scala", "semanticdb", "call-graph", "code-intelligence", "rust"]
+}

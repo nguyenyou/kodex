@@ -1,0 +1,8 @@
+Detect noise candidates for --exclude patterns
+
+Usage: kodex noise [OPTIONS]
+
+Options:
+      --idx <IDX>      Path to kodex.idx (default: .scalex/kodex.idx, or `KODEX_IDX` env var)
+      --limit <LIMIT>  Max candidates per category [default: 15]
+  -h, --help           Print help

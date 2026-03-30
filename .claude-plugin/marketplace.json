@@ -1,0 +1,27 @@
+{
+  "name": "kodex-marketplace",
+  "owner": {
+    "name": "Tu Nguyen"
+  },
+  "metadata": {
+    "description": "Compiler-precise Scala code intelligence from SemanticDB",
+    "pluginRoot": "."
+  },
+  "plugins": [
+    {
+      "name": "kodex",
+      "source": "./plugins/kodex",
+      "description": "Compiler-precise Scala code intelligence CLI — call graphs, impact analysis, flow tracing, module dependencies. Indexes SemanticDB data from compiled Mill projects. Queries in <1ms.",
+      "version": "0.1.0",
+      "author": {
+        "name": "Tu Nguyen"
+      },
+      "homepage": "https://github.com/nguyenyou/kodex",
+      "repository": "https://github.com/nguyenyou/kodex",
+      "license": "MIT",
+      "keywords": ["scala", "semanticdb", "call-graph", "code-intelligence", "rust"],
+      "category": "code-intelligence",
+      "tags": ["scala", "semanticdb", "callers", "flow", "impact", "mill", "rust"]
+    }
+  ]
+}

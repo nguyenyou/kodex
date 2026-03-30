@@ -1,0 +1,9 @@
+---
+source: tests/command_coverage.rs
+expression: out.output()
+---
+2 symbols matching 'speak'
+  method speak [abstract] (modules/core/src/com/example/Animal.scala:5)
+    fqn: com/example/Animal#speak().
+  method speak (modules/core/src/com/example/Dog.scala:6-12)
+    fqn: com/example/Dog#speak().

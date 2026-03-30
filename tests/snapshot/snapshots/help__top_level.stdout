@@ -1,0 +1,16 @@
+Compiler-precise Scala code intelligence
+
+Usage: kodex [OPTIONS] <COMMAND>
+
+Commands:
+  index       Build kodex.idx from a compiled project's `SemanticDB` and Mill metadata
+  search      Search for symbol definitions
+  info        Complete picture of a type or method (members + callers + callees + related)
+  calls       Call tree: downstream (default) or upstream (--reverse)
+  noise       Detect noise candidates for --exclude patterns
+  help        Print this message or the help of the given subcommand(s)
+
+Options:
+      --idx <IDX>  Path to kodex.idx (default: .scalex/kodex.idx, or `KODEX_IDX` env var)
+  -h, --help       Print help
+  -V, --version    Print version

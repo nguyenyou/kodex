@@ -1,0 +1,19 @@
+---
+source: tests/command_coverage.rs
+assertion_line: 244
+expression: out.output()
+---
+class ServiceImpl [modules.billing] — modules/billing/src/com/example/ServiceImpl.scala:4
+  fqn: com/example/ServiceImpl#
+  referenced: 1 sites across 0 modules
+
+  Signature: class ServiceImpl extends Service
+
+  Extends: Service
+    fqn: com/example/Service#
+
+  Members (2):
+    def process(): Unit
+      fqn: com/example/ServiceImpl#process().
+    def save(): Unit
+      fqn: com/example/ServiceImpl#save().

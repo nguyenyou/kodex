@@ -1,0 +1,8 @@
+---
+source: tests/command_coverage.rs
+expression: out.output()
+---
+trait Animal [abstract] — modules/core/src/com/example/Animal.scala:4
+  fqn: com/example/Animal#
+  signature: trait Animal
+  parents: java/lang/Object#

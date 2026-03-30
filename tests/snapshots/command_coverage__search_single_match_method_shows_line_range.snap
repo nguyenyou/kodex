@@ -1,0 +1,7 @@
+---
+source: tests/command_coverage.rs
+expression: out.output()
+---
+method bark — modules/core/src/com/example/Dog.scala:13
+  fqn: com/example/Dog#bark().
+  signature: method bark: String

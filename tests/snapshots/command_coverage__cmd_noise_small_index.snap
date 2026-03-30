@@ -1,0 +1,5 @@
+---
+source: tests/command_coverage.rs
+expression: out.output()
+---
+Noise analysis

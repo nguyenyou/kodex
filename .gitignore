@@ -1,0 +1,9 @@
+target/
+kodex.idx
+compare.sh
+CLAUDE.local.md
+lcov.info
+
+# Insta snapshot diffs (temporary)
+tests/snapshots/*.snap.new
+tests/eval/prompt.md
