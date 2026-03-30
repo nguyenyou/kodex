@@ -48,7 +48,7 @@ scala-cli compile src/ --scalac-option=-Xsemanticdb
 kodex index --root .
 ```
 
-Re-run both steps after code changes. If `.scalex/kodex.idx` exists and code hasn't changed, skip to querying.
+Re-run both steps after code changes. `kodex index` also generates `.scalex/noise.conf` with project-specific noise patterns (see Noise filtering). If `.scalex/kodex.idx` exists and code hasn't changed, skip to querying.
 
 ### Cross-project queries
 
@@ -337,21 +337,42 @@ Locations:
 
 ```bash
 kodex noise [--limit N]
+kodex noise --init                     # regenerate .scalex/noise.conf
 ```
 
-Analyzes the index and categorizes noisy symbols (effect plumbing, hub utilities, ID factories, store ops, infrastructure plumbing). Outputs a ready-to-use `--exclude` pattern. Run once on a new codebase to see what kodex considers noisy.
+Analyzes the index and categorizes noisy symbols (effect plumbing, hub utilities, ID factories, store ops, infrastructure plumbing). Outputs a ready-to-use `--exclude` pattern.
+
+Use `--init` to regenerate `.scalex/noise.conf` — the editable config file that controls which dynamic patterns are filtered. This is useful after manually clearing the file or when you want to reset to auto-detected defaults.
 
 ## Noise filtering
 
-Noise is **excluded by default** across all commands — no flag needed. This covers:
+Noise is **excluded by default** across all commands — no flag needed. There are two layers:
 
+**Hardcoded filters** (always active, not configurable — these are universally correct):
 - **stdlib**: scala/Predef, scala/Option, scala/collection/\*, java/lang/\*, java/util/\*, etc.
 - **Plumbing methods**: apply, unapply, map, flatMap, filter, foreach, collect, foldLeft, foldRight, get, getOrElse, orElse, succeed, pure, attempt, traverse, etc.
 - **Test files and generated files** (ScalaPB, protobuf, src_managed, BuildInfo)
 - **Call graph extras**: val/var accessors (dependency wiring, not real calls), $default$ parameter accessors, tuple accessors (_1, _2), synthetic names
 - **Boilerplate parents**: Object, Product, Serializable are filtered from the Extends section
 
-To **include** noise, pass `--include-noise`. For additional manual control, use `--exclude "Pattern1,Pattern2"` — patterns match against FQN, symbol name, and owner name (substring match).
+**Project-specific patterns** (from `.scalex/noise.conf` — editable):
+
+`kodex index` auto-generates `.scalex/noise.conf` with heuristically detected noise patterns (effect plumbing, hub utilities, ID factories, store ops, infrastructure plumbing). All commands read from this file instead of re-computing noise on every run.
+
+**If the noise filter is too aggressive**, edit `.scalex/noise.conf` to remove false positives — just delete the offending lines. The file is one pattern per line, `#` comments, blank lines ignored:
+
+```
+# kodex noise config — auto-generated, safe to edit
+# Effect plumbing
+DbSession
+RequestContext
+# Hub utilities
+AuthUtils
+```
+
+To regenerate the file (e.g., after manually clearing it): `kodex noise --init`. Re-running `kodex index` also overwrites it.
+
+To **include all noise** (skip both layers), pass `--include-noise`. For additional manual exclusions, use `--exclude "Pattern1,Pattern2"` — patterns match against FQN, symbol name, and owner name (substring match). `--exclude` is additive with the config file.
 
 ## FQN format
 
@@ -380,8 +401,9 @@ kodex info com/example/OrderService#createOrder().       # BROKEN — shell eats
 | `--depth N` | calls, trace | 3 | Call tree recursion depth |
 | `-r, --reverse` | calls, trace | off | Walk callers instead of callees |
 | `--cross-module-only` | calls, trace | off | Only show edges crossing module boundaries |
-| `--include-noise` | search, info, calls, trace | off | Include noise — excluded by default |
-| `--exclude P` | search, info, calls, trace | — | Manual comma-separated exclusion patterns |
+| `--include-noise` | search, info, calls, trace | off | Include all noise (skip both hardcoded filters and noise.conf) |
+| `--exclude P` | search, info, calls, trace | — | Manual comma-separated exclusion patterns (additive with noise.conf) |
+| `--init` | noise | off | Regenerate .scalex/noise.conf |
 | `--root PATH` | index | `.` | Workspace root |
 | `--idx PATH` | all | `.scalex/kodex.idx` | Override index path (or `KODEX_IDX` env var) |
 
@@ -453,7 +475,8 @@ wait
 - **No .semanticdb files**: Run the SemanticDB generation step for your build tool first.
 - **Stale results**: Re-run SemanticDB generation, then `kodex index --root .`
 - **Index not found**: Run `kodex index --root .`
-- **Too much noise**: Noise is excluded by default. Run `kodex noise` to find patterns for `--exclude`.
+- **Too much noise**: Noise is excluded by default. Run `kodex noise` to see what's filtered.
+- **Noise filter too aggressive**: Edit `.scalex/noise.conf` to remove false positive patterns. Run `kodex noise --init` to reset.
 - **Symbol not found**: Try a shorter substring, CamelCase abbreviation, or `Owner.member` syntax.
 - **info/calls/refs "Not found"**: These need exact FQNs. Run `search` first, then copy the FQN.
 - **Shell errors with FQNs**: Single-quote FQNs: `kodex info 'com/example/Foo#bar().'`
