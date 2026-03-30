@@ -370,7 +370,7 @@ RequestContext
 AuthUtils
 ```
 
-To regenerate the file (e.g., after manually clearing it): `kodex noise --init`. Re-running `kodex index` also overwrites it.
+To regenerate the file (e.g., after manually clearing it): `kodex noise --init`. `kodex index` only creates the file if it doesn't already exist — your edits are preserved across re-indexes.
 
 To **include all noise** (skip both layers), pass `--include-noise`. For additional manual exclusions, use `--exclude "Pattern1,Pattern2"` — patterns match against FQN, symbol name, and owner name (substring match). `--exclude` is additive with the config file.
 

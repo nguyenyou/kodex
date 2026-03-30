@@ -132,9 +132,8 @@ pub struct NoiseCategory {
 }
 
 /// Compute noise patterns grouped by category.
-/// Each category runs a heuristic detector and collapses prefixes independently.
-pub fn compute_noise_patterns(index: &ArchivedKodexIndex) -> Vec<NoiseCategory> {
-    let limit = 15;
+/// Collapse is done across all categories (matching `cmd_noise` output).
+pub fn compute_noise_patterns(index: &ArchivedKodexIndex, limit: usize) -> Vec<NoiseCategory> {
     let m = NoiseMetrics::build(index);
     let mut emitted: FxHashSet<u32> = FxHashSet::default();
 
@@ -146,22 +145,66 @@ pub fn compute_noise_patterns(index: &ArchivedKodexIndex) -> Vec<NoiseCategory> 
         ("Infrastructure plumbing", detect_infra_plumbing(index, &m.reverse_counts, &m.ref_counts, &m.module_spreads, &mut emitted, limit)),
     ];
 
+    // Deduplicate across categories, then collapse prefixes globally (matching cmd_noise)
     let mut seen: FxHashSet<String> = FxHashSet::default();
-    categories
-        .into_iter()
-        .filter_map(|(label, candidates)| {
-            let terms: Vec<&str> = candidates
-                .iter()
-                .filter(|c| seen.insert(c.exclude_name.clone()))
-                .map(|c| c.exclude_name.as_str())
-                .collect();
-            if terms.is_empty() {
-                return None;
+    let mut per_category: Vec<(&str, Vec<String>)> = Vec::new();
+    let mut all_terms: Vec<String> = Vec::new();
+
+    for (label, candidates) in &categories {
+        let mut cat_terms = Vec::new();
+        for c in candidates {
+            if seen.insert(c.exclude_name.clone()) {
+                cat_terms.push(c.exclude_name.clone());
+                all_terms.push(c.exclude_name.clone());
             }
-            Some(NoiseCategory {
-                label,
-                patterns: collapse_prefixes(&terms),
-            })
+        }
+        if !cat_terms.is_empty() {
+            per_category.push((label, cat_terms));
+        }
+    }
+
+    if all_terms.is_empty() {
+        return Vec::new();
+    }
+
+    // Collapse globally, then map each original term to its collapsed form
+    let term_refs: Vec<&str> = all_terms.iter().map(String::as_str).collect();
+    let collapsed = collapse_prefixes(&term_refs);
+    let mut term_to_collapsed: FxHashMap<&str, &str> = FxHashMap::default();
+    // Build reverse mapping by walking the collapse logic
+    for orig in &all_terms {
+        for col in &collapsed {
+            if orig.starts_with(col.as_str()) || orig == col {
+                term_to_collapsed.insert(orig.as_str(), col.as_str());
+                break;
+            }
+        }
+        // If no prefix matched, the term itself is in collapsed
+        term_to_collapsed.entry(orig.as_str()).or_insert(orig.as_str());
+    }
+
+    // Build categories with collapsed terms, deduplicating within each
+    per_category
+        .into_iter()
+        .filter_map(|(label, terms)| {
+            let mut cat_seen: FxHashSet<&str> = FxHashSet::default();
+            let patterns: Vec<String> = terms
+                .iter()
+                .filter_map(|t| {
+                    let fallback = t.as_str();
+                    let collapsed_term = term_to_collapsed.get(t.as_str()).unwrap_or(&fallback);
+                    if cat_seen.insert(collapsed_term) {
+                        Some((*collapsed_term).to_string())
+                    } else {
+                        None
+                    }
+                })
+                .collect();
+            if patterns.is_empty() {
+                None
+            } else {
+                Some(NoiseCategory { label, patterns })
+            }
         })
         .collect()
 }
@@ -169,7 +212,7 @@ pub fn compute_noise_patterns(index: &ArchivedKodexIndex) -> Vec<NoiseCategory> 
 /// Compute the noise exclude pattern as a comma-separated string.
 /// Returns empty string if no noise detected.
 pub fn compute_noise_exclude(index: &ArchivedKodexIndex) -> String {
-    let categories = compute_noise_patterns(index);
+    let categories = compute_noise_patterns(index, 15);
     let all: Vec<String> = categories
         .into_iter()
         .flat_map(|c| c.patterns)
@@ -186,7 +229,6 @@ const NOISE_CONF_HEADER: &str = "\
 # One exclude pattern per line. Matches FQN, name, or owner (substring).
 # Delete lines to stop filtering those symbols. Add lines to filter more.
 # Regenerate with: kodex noise --init
-# WARNING: kodex index overwrites this file.
 ";
 
 /// Write `.scalex/noise.conf` with categorized exclude patterns.
@@ -194,8 +236,9 @@ const NOISE_CONF_HEADER: &str = "\
 pub fn write_noise_conf(
     scalex_dir: &std::path::Path,
     index: &ArchivedKodexIndex,
+    limit: usize,
 ) -> std::io::Result<std::path::PathBuf> {
-    let categories = compute_noise_patterns(index);
+    let categories = compute_noise_patterns(index, limit);
     let conf_path = scalex_dir.join(NOISE_CONF_NAME);
 
     let mut content = String::from(NOISE_CONF_HEADER);
@@ -801,7 +844,7 @@ mod tests {
         write_index(&built, &idx_path).unwrap();
 
         let reader = crate::index::reader::IndexReader::open(&idx_path).unwrap();
-        let conf_path = write_noise_conf(dir.path(), reader.index()).unwrap();
+        let conf_path = write_noise_conf(dir.path(), reader.index(), 15).unwrap();
 
         assert!(conf_path.exists());
         let content = std::fs::read_to_string(&conf_path).unwrap();
