@@ -2,28 +2,48 @@ package build
 
 import mill.*, scalalib.*, scalajslib.*
 
-// Cross-platform module: JVM + JS with shared sources.
-// Shared code in mylib/bar/src/ is compiled by BOTH jvm and js targets.
-// This reproduces the duplicate-symbol issue in kodex:
-//   - JVM semanticdb references: mylib/bar/src/com/example/SharedModel.scala
-//   - JS semanticdb references:  mylib/bar/src/com/example/SharedModel.scala
-// Both produce symbols for the same source file, causing duplicates in kodex index.
+// Reproduces the shared-source duplication issue from real-world cross-platform builds.
+//
+// The pattern: shared sources are added differently to JVM vs JS modules:
+//   - JVM: adds shared/ directly as a source root (canonical path preserved)
+//   - JS:  copies shared/ to Task.dest and adds as generatedSources (out/ path)
+//
+// This causes SemanticDB to record different URIs for the same source file:
+//   - JVM SemanticDB URI: mylib/bar/shared/src/com/example/SharedModel.scala
+//   - JS  SemanticDB URI: out/mylib/bar/js/jsSharedSources.dest/com/example/SharedModel.scala
+//
+// kodex should deduplicate these and prefer the canonical (non-out/) path.
 
 object mylib extends Module {
 
-  trait SharedModule extends ScalaModule with PlatformScalaModule {
-    def scalaVersion = "3.3.4"
-    def scalacOptions = Seq("-Xsemanticdb")
-  }
+  private def sharedFolder = moduleDir / "bar" / "shared"
+
+  private def sharedSources = Task.Source(sharedFolder / "src")
 
   object bar extends Module {
-    object jvm extends SharedModule {
-      object test extends ScalaTests with TestModule.Munit {
-        def mvnDeps = Seq(mvn"org.scalameta::munit:1.0.3")
-      }
+    object jvm extends ScalaModule {
+      def scalaVersion = "3.3.4"
+      def scalacOptions = Seq("-Xsemanticdb")
+
+      // JVM: adds shared sources directly — compiler sees canonical path
+      override def sources = super.sources() :+ sharedSources()
     }
-    object js extends SharedModule with ScalaJSModule {
+
+    object js extends ScalaJSModule {
+      def scalaVersion = "3.3.4"
       def scalaJSVersion = "1.17.0"
+      def scalacOptions = Seq("-Xsemanticdb")
+
+      // JS: copies shared sources to Task.dest — compiler sees out/ path
+      // This is the pattern that causes duplicate URIs in SemanticDB.
+      private def jsSharedSources = Task {
+        val sharedSourcesPath = sharedSources().path
+        if (os.exists(sharedSourcesPath))
+          os.copy.over(sharedSourcesPath, Task.dest)
+        PathRef(Task.dest)
+      }
+
+      override def generatedSources = super.generatedSources() :+ jsSharedSources()
     }
   }
 }
