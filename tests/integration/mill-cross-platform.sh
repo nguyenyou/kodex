@@ -170,16 +170,10 @@ echo ""
 # kodex should prefer the canonical path (shared/src/) over the out/ copy.
 echo "  -- Canonical file paths --"
 info_error=$("$KODEX" search AppError --kind trait --idx "$IDX" 2>&1)
-assert_eq_known_issue \
-    "AppError path should be canonical (not out/)" \
-    "0" "$(echo "$info_error" | grep -c "out/" || echo "0")" \
-    "JS generatedSources copies to out/; kodex uses out/ path instead of shared/src/"
+assert_not_contains "AppError path has no out/ prefix" "out/" "$info_error"
 
 info_svc=$("$KODEX" search SharedService --kind trait --idx "$IDX" 2>&1)
-assert_eq_known_issue \
-    "SharedService path should be canonical (not out/)" \
-    "0" "$(echo "$info_svc" | grep -c "out/" || echo "0")" \
-    "JS generatedSources copies to out/; kodex uses out/ path instead of shared/src/"
+assert_not_contains "SharedService path has no out/ prefix" "out/" "$info_svc"
 echo ""
 
 # ── 3e: Module assignment for shared symbols ──
@@ -200,12 +194,9 @@ js_has_shared=$(echo "$search_js_shared" | grep -c "trait AppError" || echo "0")
 assert_eq "AppError findable via --module js" "1" "$js_has_shared"
 
 # File count: should be 4 (2 shared + 1 jvm + 1 js), not 6
-# Overview line: "2 modules, 70 symbols, 6 files"
+# Overview line: "2 modules, 70 symbols, 4 files"
 file_count=$(echo "$overview" | head -1 | sed 's/.*, //' | sed 's/ files.*//')
-assert_eq_known_issue \
-    "overview shows 4 files (not 6 — shared counted once)" \
-    "4" "$file_count" \
-    "shared files counted separately for JVM and JS (6 instead of 4)"
+assert_eq "overview shows 4 files (shared counted once)" "4" "$file_count"
 echo ""
 
 # ── 3f: Module-specific symbols in correct module ──
