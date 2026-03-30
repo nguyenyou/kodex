@@ -66,8 +66,8 @@ pub fn cmd_refs(
         }
     }
 
-    let total_refs: usize = by_module.values().flat_map(|files| files.values()).map(|lines| lines.len()).sum();
-    let total_files: usize = by_module.values().map(|files| files.len()).sum();
+    let total_refs: usize = by_module.values().flat_map(|files| files.values()).map(Vec::len).sum();
+    let total_files: usize = by_module.values().map(std::collections::BTreeMap::len).sum();
     let total_modules = by_module.len();
 
     if total_refs == 0 {
@@ -85,7 +85,7 @@ pub fn cmd_refs(
     for (&mid, files) in &by_module {
         let mod_name = module_display_name(index, mid);
         let mod_label = if mod_name.is_empty() { "(unknown)" } else { mod_name };
-        let ref_count: usize = files.values().map(|lines| lines.len()).sum();
+        let ref_count: usize = files.values().map(Vec::len).sum();
         let file_count = files.len();
         writeln!(out, "  {mod_label:<40} {ref_count} refs in {file_count} files").unwrap();
     }
@@ -104,7 +104,7 @@ pub fn cmd_refs(
                 break 'outer;
             }
             let file_path = s(index, file_entry(index, fid).path);
-            let line_strs: Vec<String> = lines.iter().map(|l| l.to_string()).collect();
+            let line_strs: Vec<String> = lines.iter().map(ToString::to_string).collect();
             writeln!(out, "    {file_path}:{}", line_strs.join(",")).unwrap();
             shown += 1;
         }

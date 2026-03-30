@@ -6,6 +6,7 @@
 use anyhow::Result;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
+use walkdir::WalkDir;
 
 use super::fallback::FallbackProvider;
 use super::mill::MillProvider;
@@ -66,6 +67,41 @@ pub struct ModuleInfo {
     pub main_class: String,
     /// Test framework (only for test modules), e.g. "org.scalatest.tools.Framework"
     pub test_framework: String,
+}
+
+/// Walk `dir` for `.semanticdb` files and tag each with `module_segments`.
+pub fn collect_semanticdb_files(dir: &Path, module_segments: &str) -> Vec<DiscoveredFile> {
+    WalkDir::new(dir)
+        .into_iter()
+        .filter_map(std::result::Result::ok)
+        .filter(|e| e.file_type().is_file())
+        .filter(|e| {
+            e.path()
+                .extension()
+                .is_some_and(|ext| ext.eq_ignore_ascii_case("semanticdb"))
+        })
+        .map(|e| DiscoveredFile {
+            path: e.into_path(),
+            module_segments: module_segments.to_string(),
+        })
+        .collect()
+}
+
+/// Check if any path component equals the given name.
+pub(crate) fn path_contains_component(path: &Path, name: &str) -> bool {
+    path.iter().any(|c| c == name)
+}
+
+/// Walk up from `path` to find the nearest ancestor directory with the given name.
+pub(crate) fn find_ancestor_named(path: &Path, name: &str) -> Option<PathBuf> {
+    let mut current = path;
+    while let Some(parent) = current.parent() {
+        if parent.file_name().is_some_and(|n| n == name) {
+            return Some(parent.to_path_buf());
+        }
+        current = parent;
+    }
+    None
 }
 
 // ── Provider trait ─────────────────────────────────────────────────────────

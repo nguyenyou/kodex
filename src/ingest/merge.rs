@@ -144,8 +144,7 @@ pub fn build_index(
         version: KODEX_INDEX_VERSION,
         workspace_root: std::path::Path::new(workspace_root)
             .canonicalize()
-            .map(|p| p.to_string_lossy().into_owned())
-            .unwrap_or_else(|_| workspace_root.to_string()),
+            .map_or_else(|_| workspace_root.to_string(), |p| p.to_string_lossy().into_owned()),
         strings: strings_vec,
         files,
         symbols,

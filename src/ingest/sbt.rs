@@ -15,7 +15,10 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use walkdir::WalkDir;
 
-use super::provider::{BuildMetadata, BuildProvider, DiscoveredFile, DiscoveryResult, ModuleInfo};
+use super::provider::{
+    collect_semanticdb_files, find_ancestor_named, path_contains_component, BuildMetadata,
+    BuildProvider, DiscoveredFile, DiscoveryResult, ModuleInfo,
+};
 
 pub struct SbtProvider;
 
@@ -58,20 +61,7 @@ impl BuildProvider for SbtProvider {
         let files: Vec<DiscoveredFile> = sdb_dirs
             .par_iter()
             .flat_map(|(dir, module_segments, _)| {
-                WalkDir::new(dir)
-                    .into_iter()
-                    .filter_map(std::result::Result::ok)
-                    .filter(|e| e.file_type().is_file())
-                    .filter(|e| {
-                        e.path()
-                            .extension()
-                            .is_some_and(|ext| ext.eq_ignore_ascii_case("semanticdb"))
-                    })
-                    .map(|e| DiscoveredFile {
-                        path: e.into_path(),
-                        module_segments: module_segments.clone(),
-                    })
-                    .collect::<Vec<_>>()
+                collect_semanticdb_files(dir, module_segments)
             })
             .collect();
 
@@ -173,14 +163,14 @@ fn extract_sbt_module_info(root: &Path, sdb_dir: &Path) -> Option<(String, bool)
     };
 
     // Check for test-meta vs meta
-    let is_test = components.iter().any(|&c| c == "test-meta");
+    let is_test = components.contains(&"test-meta");
 
     Some((module_segments, is_test))
 }
 
 /// Extract Scala version from path like `.../scala-2.13.18/meta/...`
 fn extract_scala_version(sdb_dir: &Path) -> Option<String> {
-    for component in sdb_dir.iter() {
+    for component in sdb_dir {
         let s = component.to_str()?;
         if let Some(ver) = s.strip_prefix("scala-") {
             return Some(ver.to_string());
@@ -189,22 +179,6 @@ fn extract_scala_version(sdb_dir: &Path) -> Option<String> {
     None
 }
 
-/// Check if any path component equals the given name.
-fn path_contains_component(path: &Path, name: &str) -> bool {
-    path.iter().any(|c| c == name)
-}
-
-/// Walk up from `path` to find the nearest ancestor directory with the given name.
-fn find_ancestor_named(path: &Path, name: &str) -> Option<PathBuf> {
-    let mut current = path;
-    while let Some(parent) = current.parent() {
-        if parent.file_name().is_some_and(|n| n == name) {
-            return Some(parent.to_path_buf());
-        }
-        current = parent;
-    }
-    None
-}
 
 #[cfg(test)]
 mod tests {

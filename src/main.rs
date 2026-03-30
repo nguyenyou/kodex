@@ -85,7 +85,7 @@ struct Cli {
 enum Command {
     /// Codebase overview: module list with stats
     Overview,
-    /// Build kodex.idx from a compiled project's SemanticDB output
+    /// Build kodex.idx from a compiled project's `SemanticDB` output
     Index {
         /// Workspace root
         #[arg(long, default_value = ".")]

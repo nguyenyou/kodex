@@ -69,30 +69,74 @@ struct NoiseCandidate {
     evidence: String,
 }
 
+impl NoiseCandidate {
+    /// Build a candidate for a method symbol, using its owner name for display/exclude.
+    fn method(index: &ArchivedKodexIndex, sid: u32, evidence: String) -> Self {
+        let sym = sym_at(index, sid);
+        let name = s(index, sym.name);
+        let oname = owner_name(index, sym);
+        let display = if oname.is_empty() {
+            format!("method {name}")
+        } else {
+            format!("method {oname}.{name}")
+        };
+        let exclude_name = if oname.is_empty() {
+            name.to_string()
+        } else {
+            oname.to_string()
+        };
+        Self {
+            exclude_name,
+            display,
+            evidence,
+        }
+    }
+}
+
+/// Pre-computed metric maps shared by `cmd_noise` and `compute_noise_exclude`.
+struct NoiseMetrics {
+    forward_counts: FxHashMap<u32, usize>,
+    reverse_counts: FxHashMap<u32, usize>,
+    ref_counts: FxHashMap<u32, usize>,
+    module_spreads: FxHashMap<u32, usize>,
+}
+
+impl NoiseMetrics {
+    fn build(index: &ArchivedKodexIndex) -> Self {
+        let mut forward_counts: FxHashMap<u32, usize> = FxHashMap::default();
+        for el in index.call_graph_forward.iter() {
+            forward_counts.insert(el.from.into(), el.to.len());
+        }
+        let mut reverse_counts: FxHashMap<u32, usize> = FxHashMap::default();
+        for el in index.call_graph_reverse.iter() {
+            reverse_counts.insert(el.from.into(), el.to.len());
+        }
+        let mut ref_counts: FxHashMap<u32, usize> = FxHashMap::default();
+        for rl in index.references.iter() {
+            ref_counts.insert(rl.symbol_id.into(), rl.refs.len());
+        }
+        let module_spreads = build_module_spreads(index);
+        Self {
+            forward_counts,
+            reverse_counts,
+            ref_counts,
+            module_spreads,
+        }
+    }
+}
+
 /// Compute the noise exclude pattern as a comma-separated string.
 /// Returns empty string if no noise detected. Used by `--noise-filter`.
 pub fn compute_noise_exclude(index: &ArchivedKodexIndex) -> String {
     let limit = 15; // same default as cmd_noise
-    let mut forward_counts: FxHashMap<u32, usize> = FxHashMap::default();
-    for el in index.call_graph_forward.iter() {
-        forward_counts.insert(el.from.into(), el.to.len());
-    }
-    let mut reverse_counts: FxHashMap<u32, usize> = FxHashMap::default();
-    for el in index.call_graph_reverse.iter() {
-        reverse_counts.insert(el.from.into(), el.to.len());
-    }
-    let mut ref_counts: FxHashMap<u32, usize> = FxHashMap::default();
-    for rl in index.references.iter() {
-        ref_counts.insert(rl.symbol_id.into(), rl.refs.len());
-    }
-    let module_spreads = build_module_spreads(index);
+    let m = NoiseMetrics::build(index);
     let mut emitted: FxHashSet<u32> = FxHashSet::default();
 
-    let plumbing = detect_effect_plumbing(index, &forward_counts, &reverse_counts, &mut emitted, limit);
-    let hubs = detect_hub_utilities(index, &ref_counts, &module_spreads, &mut emitted, limit);
-    let factories = detect_id_factories(index, &reverse_counts, &mut emitted, limit);
-    let store_ops = detect_store_ops(index, &reverse_counts, &mut emitted, limit);
-    let infra = detect_infra_plumbing(index, &reverse_counts, &ref_counts, &module_spreads, &mut emitted, limit);
+    let plumbing = detect_effect_plumbing(index, &m.forward_counts, &m.reverse_counts, &mut emitted, limit);
+    let hubs = detect_hub_utilities(index, &m.ref_counts, &m.module_spreads, &mut emitted, limit);
+    let factories = detect_id_factories(index, &m.reverse_counts, &mut emitted, limit);
+    let store_ops = detect_store_ops(index, &m.reverse_counts, &mut emitted, limit);
+    let infra = detect_infra_plumbing(index, &m.reverse_counts, &m.ref_counts, &m.module_spreads, &mut emitted, limit);
 
     let all: Vec<&NoiseCandidate> = plumbing.iter()
         .chain(hubs.iter())
@@ -121,30 +165,7 @@ pub fn cmd_noise(index: &ArchivedKodexIndex, limit: usize) -> CommandResult {
     writeln!(out, "Noise analysis").unwrap();
 
     // ── Phase 1: build metric maps ──────────────────────────────────────────
-
-    // Forward edge counts: symbol_id → number of callees
-    let mut forward_counts: FxHashMap<u32, usize> = FxHashMap::default();
-    for el in index.call_graph_forward.iter() {
-        let from: u32 = el.from.into();
-        forward_counts.insert(from, el.to.len());
-    }
-
-    // Reverse edge counts: symbol_id → number of callers
-    let mut reverse_counts: FxHashMap<u32, usize> = FxHashMap::default();
-    for el in index.call_graph_reverse.iter() {
-        let from: u32 = el.from.into();
-        reverse_counts.insert(from, el.to.len());
-    }
-
-    // Reference counts: symbol_id → number of references
-    let mut ref_counts: FxHashMap<u32, usize> = FxHashMap::default();
-    for rl in index.references.iter() {
-        let sid: u32 = rl.symbol_id.into();
-        ref_counts.insert(sid, rl.refs.len());
-    }
-
-    // Module spread: symbol_id → number of distinct modules referencing it
-    let module_spreads = build_module_spreads(index);
+    let m = NoiseMetrics::build(index);
 
     // Track emitted symbols to deduplicate across categories
     let mut emitted: FxHashSet<u32> = FxHashSet::default();
@@ -154,8 +175,8 @@ pub fn cmd_noise(index: &ArchivedKodexIndex, limit: usize) -> CommandResult {
     // Category 1: Effect plumbing
     let plumbing = detect_effect_plumbing(
         index,
-        &forward_counts,
-        &reverse_counts,
+        &m.forward_counts,
+        &m.reverse_counts,
         &mut emitted,
         limit,
     );
@@ -168,7 +189,7 @@ pub fn cmd_noise(index: &ArchivedKodexIndex, limit: usize) -> CommandResult {
     }
 
     // Category 2: Hub utilities
-    let hubs = detect_hub_utilities(index, &ref_counts, &module_spreads, &mut emitted, limit);
+    let hubs = detect_hub_utilities(index, &m.ref_counts, &m.module_spreads, &mut emitted, limit);
     if !hubs.is_empty() {
         writeln!(out).unwrap();
         writeln!(out, "Hub utilities (high ref count, wide module spread):").unwrap();
@@ -178,7 +199,7 @@ pub fn cmd_noise(index: &ArchivedKodexIndex, limit: usize) -> CommandResult {
     }
 
     // Category 3: ID factories
-    let factories = detect_id_factories(index, &reverse_counts, &mut emitted, limit);
+    let factories = detect_id_factories(index, &m.reverse_counts, &mut emitted, limit);
     if !factories.is_empty() {
         writeln!(out).unwrap();
         writeln!(out, "ID factories (pure generation, no business logic):").unwrap();
@@ -188,7 +209,7 @@ pub fn cmd_noise(index: &ArchivedKodexIndex, limit: usize) -> CommandResult {
     }
 
     // Category 4: Boilerplate store ops
-    let store_ops = detect_store_ops(index, &reverse_counts, &mut emitted, limit);
+    let store_ops = detect_store_ops(index, &m.reverse_counts, &mut emitted, limit);
     if !store_ops.is_empty() {
         writeln!(out).unwrap();
         writeln!(out, "Boilerplate store ops (low-level CRUD):").unwrap();
@@ -200,9 +221,9 @@ pub fn cmd_noise(index: &ArchivedKodexIndex, limit: usize) -> CommandResult {
     // Category 5: Infrastructure plumbing
     let infra = detect_infra_plumbing(
         index,
-        &reverse_counts,
-        &ref_counts,
-        &module_spreads,
+        &m.reverse_counts,
+        &m.ref_counts,
+        &m.module_spreads,
         &mut emitted,
         limit,
     );
@@ -286,24 +307,7 @@ fn detect_effect_plumbing(
         .into_iter()
         .filter(|(sid, _, _)| emitted.insert(*sid))
         .map(|(sid, call_sites, callees)| {
-            let sym = sym_at(index, sid);
-            let name = s(index, sym.name);
-            let oname = owner_name(index, sym);
-            let display = if oname.is_empty() {
-                format!("method {name}")
-            } else {
-                format!("method {oname}.{name}")
-            };
-            let exclude_name = if oname.is_empty() {
-                name.to_string()
-            } else {
-                oname.to_string()
-            };
-            NoiseCandidate {
-                exclude_name,
-                display,
-                evidence: format!("{call_sites} call sites, {callees} callees"),
-            }
+            NoiseCandidate::method(index, sid, format!("{call_sites} call sites, {callees} callees"))
         })
         .collect()
 }
@@ -378,7 +382,7 @@ fn detect_id_factories(
         let name = s(index, sym.name);
         let oname = owner_name(index, sym);
 
-        let is_factory = FACTORY_METHOD_PATTERNS.iter().any(|p| name == *p)
+        let is_factory = FACTORY_METHOD_PATTERNS.contains(&name)
             || (oname.contains("Factory") || oname.contains("Generator"));
 
         if !is_factory {
@@ -399,24 +403,7 @@ fn detect_id_factories(
         .into_iter()
         .filter(|(sid, _)| emitted.insert(*sid))
         .map(|(sid, call_sites)| {
-            let sym = sym_at(index, sid);
-            let name = s(index, sym.name);
-            let oname = owner_name(index, sym);
-            let display = if oname.is_empty() {
-                format!("method {name}")
-            } else {
-                format!("method {oname}.{name}")
-            };
-            let exclude_name = if oname.is_empty() {
-                name.to_string()
-            } else {
-                oname.to_string()
-            };
-            NoiseCandidate {
-                exclude_name,
-                display,
-                evidence: format!("{call_sites} call sites"),
-            }
+            NoiseCandidate::method(index, sid, format!("{call_sites} call sites"))
         })
         .collect()
 }
@@ -444,7 +431,7 @@ fn detect_store_ops(
         let is_store_owner = STORE_OWNER_SUFFIXES
             .iter()
             .any(|suffix| oname.ends_with(suffix));
-        let is_crud = CRUD_METHOD_NAMES.iter().any(|m| name == *m);
+        let is_crud = CRUD_METHOD_NAMES.contains(&name);
 
         if !is_store_owner || !is_crud {
             continue;
@@ -464,24 +451,7 @@ fn detect_store_ops(
         .into_iter()
         .filter(|(sid, _)| emitted.insert(*sid))
         .map(|(sid, call_sites)| {
-            let sym = sym_at(index, sid);
-            let name = s(index, sym.name);
-            let oname = owner_name(index, sym);
-            let display = if oname.is_empty() {
-                format!("method {name}")
-            } else {
-                format!("method {oname}.{name}")
-            };
-            let exclude_name = if oname.is_empty() {
-                name.to_string()
-            } else {
-                oname.to_string()
-            };
-            NoiseCandidate {
-                exclude_name,
-                display,
-                evidence: format!("{call_sites} call sites"),
-            }
+            NoiseCandidate::method(index, sid, format!("{call_sites} call sites"))
         })
         .collect()
 }
@@ -535,24 +505,8 @@ fn detect_infra_plumbing(
     candidates
         .into_iter()
         .filter(|(sid, _, _)| emitted.insert(*sid))
-        .map(|(sid, call_sites, oname)| {
-            let sym = sym_at(index, sid);
-            let name = s(index, sym.name);
-            let display = if oname.is_empty() {
-                format!("method {name}")
-            } else {
-                format!("method {oname}.{name}")
-            };
-            let exclude_name = if oname.is_empty() {
-                name.to_string()
-            } else {
-                oname
-            };
-            NoiseCandidate {
-                exclude_name,
-                display,
-                evidence: format!("{call_sites} call sites"),
-            }
+        .map(|(sid, call_sites, _oname)| {
+            NoiseCandidate::method(index, sid, format!("{call_sites} call sites"))
         })
         .collect()
 }
