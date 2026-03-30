@@ -484,6 +484,74 @@ pub fn make_rich_test_docs() -> Vec<IntermediateDoc> {
     ]
 }
 
+/// Fixture with case class, enum, and plain class to test property-based kind filtering.
+///
+///   case class Config(host: String, port: Int)   — PROP_CASE
+///   enum Status { Active, Inactive }             — PROP_ENUM
+///   class Engine                                 — plain class (no PROP_CASE, no PROP_ENUM)
+#[allow(dead_code)]
+pub fn make_property_kind_docs() -> Vec<IntermediateDoc> {
+    vec![IntermediateDoc {
+        uri: "modules/core/src/com/example/Types.scala".to_string(),
+        module_segments: "modules.core".to_string(),
+        symbols: vec![
+            IntermediateSymbol {
+                fqn: "com/example/Config#".to_string(),
+                display_name: "Config".to_string(),
+                kind: SymbolKind::Class,
+                properties: 0x8 | 0x80, // final | case
+                signature: "case class Config(host: String, port: Int)".to_string(),
+                parents: vec![],
+                overridden_symbols: vec![],
+                access: Access::Public,
+            },
+            IntermediateSymbol {
+                fqn: "com/example/Status#".to_string(),
+                display_name: "Status".to_string(),
+                kind: SymbolKind::Class,
+                properties: 0x4 | 0x10 | 0x4000, // abstract | sealed | enum
+                signature: "enum Status".to_string(),
+                parents: vec![],
+                overridden_symbols: vec![],
+                access: Access::Public,
+            },
+            IntermediateSymbol {
+                fqn: "com/example/Engine#".to_string(),
+                display_name: "Engine".to_string(),
+                kind: SymbolKind::Class,
+                properties: 0,
+                signature: "class Engine".to_string(),
+                parents: vec![],
+                overridden_symbols: vec![],
+                access: Access::Public,
+            },
+        ],
+        occurrences: vec![
+            IntermediateOccurrence {
+                symbol: "com/example/Config#".to_string(),
+                role: ReferenceRole::Definition,
+                start_line: 3,
+                start_col: 6,
+                end_col: 12,
+            },
+            IntermediateOccurrence {
+                symbol: "com/example/Status#".to_string(),
+                role: ReferenceRole::Definition,
+                start_line: 5,
+                start_col: 6,
+                end_col: 12,
+            },
+            IntermediateOccurrence {
+                symbol: "com/example/Engine#".to_string(),
+                role: ReferenceRole::Definition,
+                start_line: 8,
+                start_col: 6,
+                end_col: 12,
+            },
+        ],
+    }]
+}
+
 /// Wrapper that keeps the tempdir alive alongside the IndexReader.
 #[allow(dead_code)]
 pub struct TestIndex {

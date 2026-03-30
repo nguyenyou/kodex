@@ -2,7 +2,7 @@ use super::CommandResult;
 use crate::model::{ArchivedKodexIndex, NONE_ID};
 use crate::query::format::{format_file_location, module_tag, owner_name};
 use crate::query::graph::{filtered_neighbors, retain_cross_module};
-use crate::query::symbol::{find_by_fqn, kind_str};
+use crate::query::symbol::{display_kind, find_by_fqn};
 use crate::query::{file_entry, s, sym as sym_at};
 use std::fmt::Write;
 
@@ -124,7 +124,7 @@ fn render_node(
 ) {
     let sym = sym_at(index, sym_id);
     let name = s(index, sym.name);
-    let kind = kind_str(&sym.kind);
+    let kind = display_kind(sym);
     let sig = s(index, sym.type_signature);
     let file_id: u32 = sym.file_id.into();
     let fe = file_entry(index, file_id);

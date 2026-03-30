@@ -4,7 +4,11 @@
 
 ### Added
 - **`--kind case-class`** — filters search results to only case classes (uses `PROP_CASE` property bit)
-- **`--kind enum`** — filters search results to only Scala 3 enums (uses `PROP_ENUM` property bit)
+- **`--kind enum`** — filters search results to only Scala 3 enums (uses `PROP_ENUM` property bit); also matches `Interface`-kinded enums from SemanticDB
+- **`display_kind()`** — property-aware display function: shows "case class" and "enum" in all output (search, info, calls, trace, noise) instead of generic "class"
+
+### Changed
+- **`--kind class` is now strict** — excludes case classes and enums. Use `--kind case-class` or `--kind enum` for those. Each kind filter is now disjoint (breaking change).
 
 ## [1.4.0] — 2026-03-30
 

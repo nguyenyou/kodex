@@ -2,13 +2,13 @@ use super::{file_entry, s, sym as sym_at};
 use crate::model::{
     ArchivedAccess, ArchivedKodexIndex, ArchivedReferenceRole, ArchivedSymbol, NONE_ID,
 };
-use crate::query::symbol::kind_str;
+use crate::query::symbol::display_kind;
 use rustc_hash::FxHashSet;
 use std::fmt::Write;
 
 /// Format a symbol as a one-line summary.
 pub fn format_symbol_line(index: &ArchivedKodexIndex, sym: &ArchivedSymbol) -> String {
-    let kind = kind_str(&sym.kind);
+    let kind = display_kind(sym);
     let name = s(index, sym.name);
     let fqn = s(index, sym.fqn);
     let props = format_properties(sym.properties.into());
@@ -23,7 +23,7 @@ pub fn format_symbol_detail(
     sym: &ArchivedSymbol,
     verbose: bool,
 ) -> String {
-    let kind = kind_str(&sym.kind);
+    let kind = display_kind(sym);
     let name = s(index, sym.name);
     let fqn = s(index, sym.fqn);
     let file = s(index, file_entry(index, sym.file_id).path);
