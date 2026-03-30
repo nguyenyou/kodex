@@ -20,24 +20,28 @@ use std::time::Instant;
 #[derive(Clone, ValueEnum)]
 enum SymbolKindArg {
     Class,
+    CaseClass,
     Trait,
     Object,
     Method,
     Field,
     Type,
     Constructor,
+    Enum,
 }
 
 impl SymbolKindArg {
     fn as_str(&self) -> &'static str {
         match self {
             Self::Class => "class",
+            Self::CaseClass => "case-class",
             Self::Trait => "trait",
             Self::Object => "object",
             Self::Method => "method",
             Self::Field => "field",
             Self::Type => "type",
             Self::Constructor => "constructor",
+            Self::Enum => "enum",
         }
     }
 }
