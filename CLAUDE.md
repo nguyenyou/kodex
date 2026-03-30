@@ -68,3 +68,14 @@ Early stage — breaking changes are expected and welcome. Do not add backwards-
 - Shared fixture: `tests/common/mod.rs` — `make_billing_test_docs()` builds a billing system fixture (1 module, 5 symbols with trait, impl, override, call graph)
 - `insta` for snapshot testing. `cargo insta review` to accept changes.
 - Shell snapshots in `tests/snapshot/` test against a real project; Rust tests in `tests/` are self-contained.
+
+## Release Workflow
+
+1. Update `CHANGELOG.md` — move `[Unreleased]` content to `[X.Y.Z] — YYYY-MM-DD` section
+2. Bump version in `Cargo.toml` and run `cargo check` to update `Cargo.lock`
+3. Commit, merge to main
+4. Tag and push: `git tag vX.Y.Z && git push origin vX.Y.Z`
+5. GitHub Actions builds binaries (macOS ARM64, macOS x64, Linux x64) and creates release with changelog body extracted via awk
+6. Update bootstrap script checksums: download `.sha256` files from the release, update `EXPECTED_VERSION` and `CHECKSUM_*` vars in the kodex skill's `scripts/kodex-cli`
+
+**Changelog format:** Keep a Changelog style — `## [VERSION] — DATE` headers, `### Added`/`### Changed`/`### Fixed` sections. The release workflow extracts the matching version section with awk.
