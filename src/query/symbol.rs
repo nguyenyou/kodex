@@ -1,6 +1,8 @@
 use super::{s, sym};
 use crate::hash::contains_ignore_ascii_case;
-use crate::model::{ArchivedEdgeList, ArchivedKodexIndex, ArchivedSymbol, ArchivedSymbolKind};
+use crate::model::{
+    ArchivedEdgeList, ArchivedKodexIndex, ArchivedSymbol, ArchivedSymbolKind, PROP_CASE, PROP_ENUM,
+};
 use crate::query::file_entry;
 use rustc_hash::FxHashMap;
 use std::fmt::Write;
@@ -478,7 +480,7 @@ pub fn resolve_filtered<'a>(
     }
     // Apply kind filter strictly — return empty if no symbols match the requested kind
     if let Some(k) = kind_filter {
-        candidates.retain(|sym| kind_str(&sym.kind).eq_ignore_ascii_case(k));
+        candidates.retain(|sym| matches_kind_filter(sym, k));
         if candidates.is_empty() {
             return vec![];
         }
@@ -505,7 +507,7 @@ pub fn list_module_symbols<'a>(
     let all_symbols: Vec<&ArchivedSymbol> = index.symbols.iter().collect();
     let mut candidates = crate::query::filter::filter_by_module(index, &all_symbols, module_pattern);
     if let Some(k) = kind_filter {
-        candidates.retain(|sym| kind_str(&sym.kind).eq_ignore_ascii_case(k));
+        candidates.retain(|sym| matches_kind_filter(sym, k));
     }
     // Filter out parameters, type parameters, locals, self parameters
     candidates.retain(|sym| {
@@ -579,9 +581,27 @@ pub fn filter_by_kind<'a>(
         None => symbols.to_vec(),
         Some(k) => symbols
             .iter()
-            .filter(|sym| kind_str(&sym.kind).eq_ignore_ascii_case(k))
+            .filter(|sym| matches_kind_filter(sym, k))
             .copied()
             .collect(),
+    }
+}
+
+/// Check whether a symbol matches a kind filter string.
+///
+/// Handles property-based kinds like "case-class" and "enum" that combine
+/// the base `SymbolKind` with property bitmask flags.
+#[must_use]
+pub fn matches_kind_filter(sym: &ArchivedSymbol, filter: &str) -> bool {
+    let props: u32 = sym.properties.into();
+    match filter {
+        "case-class" => {
+            matches!(sym.kind, ArchivedSymbolKind::Class) && (props & PROP_CASE != 0)
+        }
+        "enum" => {
+            matches!(sym.kind, ArchivedSymbolKind::Class) && (props & PROP_ENUM != 0)
+        }
+        _ => kind_str(&sym.kind).eq_ignore_ascii_case(filter),
     }
 }
 
