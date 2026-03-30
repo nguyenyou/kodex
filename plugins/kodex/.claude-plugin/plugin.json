@@ -1,6 +1,6 @@
 {
   "name": "kodex",
-  "description": "Compiler-precise Scala code intelligence CLI — call graphs, impact analysis, flow tracing, module dependencies from SemanticDB",
+  "description": "Compiler-precise Scala code intelligence CLI — call graphs, type hierarchies, cross-module references from SemanticDB",
   "author": {
     "name": "Tu Nguyen"
   },

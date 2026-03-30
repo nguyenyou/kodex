@@ -5,13 +5,13 @@ if [ -z "${BASH_VERSION:-}" ] && [ -f "$0" ]; then
 fi
 set -euo pipefail
 
-EXPECTED_VERSION="0.1.0"
+EXPECTED_VERSION="1.0.0"
 REPO="nguyenyou/kodex"
 
 # Expected SHA-256 checksums for each artifact (updated each release alongside EXPECTED_VERSION)
-CHECKSUM_kodex_macos_arm64=""
-CHECKSUM_kodex_macos_x64=""
-CHECKSUM_kodex_linux_x64=""
+CHECKSUM_kodex_macos_arm64="3565c4bfa24b26fbc21003514a34be9b6d0a3e233bc7a3b59f27ae59c6c4fb41"
+CHECKSUM_kodex_macos_x64="1a1f9fdeb0639e38a905a6e2a26b3cd1f9ad907d06896d5d722ebdc211eecb9f"
+CHECKSUM_kodex_linux_x64="ed232fb13c0f4b73bd0860f62690907af2aca0b5f6b7a41e8b424f1573ee3f79"
 
 # Cache location: follow XDG spec
 CACHE_DIR="${XDG_CACHE_HOME:-$HOME/.cache}/kodex"

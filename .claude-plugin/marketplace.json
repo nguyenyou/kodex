@@ -11,8 +11,8 @@
     {
       "name": "kodex",
       "source": "./plugins/kodex",
-      "description": "Compiler-precise Scala code intelligence CLI — call graphs, impact analysis, flow tracing, module dependencies. Indexes SemanticDB data from compiled Mill projects. Queries in <1ms.",
-      "version": "0.1.0",
+      "description": "Compiler-precise Scala code intelligence CLI — call graphs, type hierarchies, cross-module references. Indexes SemanticDB data from compiled Scala projects (Mill, sbt, scala-cli).",
+      "version": "1.0.0",
       "author": {
         "name": "Tu Nguyen"
       },
@@ -21,7 +21,7 @@
       "license": "MIT",
       "keywords": ["scala", "semanticdb", "call-graph", "code-intelligence", "rust"],
       "category": "code-intelligence",
-      "tags": ["scala", "semanticdb", "callers", "flow", "impact", "mill", "rust"]
+      "tags": ["scala", "semanticdb", "call-graph", "code-intelligence", "mill", "sbt", "scala-cli", "rust"]
     }
   ]
 }
