@@ -63,14 +63,15 @@ Or set the `KODEX_IDX` environment variable. The `--idx` flag is global — it w
 ## Core workflow
 
 ```
-overview → search → info → calls/refs
-(orient)   (find)   (understand) (trace deeper)
+overview → noise check → search → info → calls/refs
+(orient)   (tune filters)  (find)   (understand) (trace deeper)
 ```
 
 1. **`overview`** — see modules and codebase size. Run first on any new codebase.
-2. **`search`** — find symbols by name. Copy FQNs from the output.
-3. **`info`** — paste an FQN, get the complete picture (signature, members, call graph, source code).
-4. **`calls`** / **`refs`** — go deeper when info's capped preview isn't enough.
+2. **`noise`** — check what's being filtered. Review `.scalex/noise.conf` and remove any patterns that hide symbols you need (see Noise management below).
+3. **`search`** — find symbols by name. Copy FQNs from the output.
+4. **`info`** — paste an FQN, get the complete picture (signature, members, call graph, source code).
+5. **`calls`** / **`refs`** — go deeper when info's capped preview isn't enough.
 
 **Key distinction:** `info` shows call graph (callers/callees) — best for **methods**. For **types** (class/trait), use `refs` to see where the type is used across the codebase.
 
@@ -359,20 +360,32 @@ Noise is **excluded by default** across all commands — no flag needed. There a
 
 `kodex index` auto-generates `.scalex/noise.conf` with heuristically detected noise patterns (effect plumbing, hub utilities, ID factories, store ops, infrastructure plumbing). All commands read from this file instead of re-computing noise on every run.
 
-**If the noise filter is too aggressive**, edit `.scalex/noise.conf` to remove false positives — just delete the offending lines. The file is one pattern per line, `#` comments, blank lines ignored:
+The file is one pattern per line, `#` comments, blank lines ignored. `kodex index` only creates it if missing — edits are preserved across re-indexes. `kodex noise --init` regenerates it from scratch.
 
+### Noise management
+
+The heuristic detectors sometimes filter symbols you actually need. Don't blindly trust the config — review it early so you aren't confused by missing results later.
+
+**At session start:**
+```bash
+kodex noise                            # see what's being filtered and why
+cat .scalex/noise.conf                 # review the actual patterns
 ```
-# kodex noise config — auto-generated, safe to edit
-# Effect plumbing
-DbSession
-RequestContext
-# Hub utilities
-AuthUtils
+
+Scan the output for symbols relevant to your task. If anything looks wrong — a service class you need is being hidden, a key trait is classified as a "hub utility" — edit the config:
+
+Just delete the offending line from `.scalex/noise.conf`.
+
+**If the config is missing or stale:**
+```bash
+kodex noise --init                     # regenerate from current index
 ```
 
-To regenerate the file (e.g., after manually clearing it): `kodex noise --init`. `kodex index` only creates the file if it doesn't already exist — your edits are preserved across re-indexes.
+**During a session**, if a `search` or `info` query returns fewer results than expected, check whether the symbol is being noise-filtered. Run `kodex search YourSymbol --include-noise` — if it appears with `--include-noise` but not without, it's being filtered. Edit `.scalex/noise.conf` to remove the matching pattern.
 
-To **include all noise** (skip both layers), pass `--include-noise`. For additional manual exclusions, use `--exclude "Pattern1,Pattern2"` — patterns match against FQN, symbol name, and owner name (substring match). `--exclude` is additive with the config file.
+**Additional controls:**
+- `--include-noise` — skip both hardcoded filters and config file (show everything)
+- `--exclude "Pattern1,Pattern2"` — add manual exclusions on top of the config file
 
 ## FQN format
 
@@ -409,9 +422,10 @@ kodex info com/example/OrderService#createOrder().       # BROKEN — shell eats
 
 ## Common patterns
 
-**Understand a new codebase:**
+**Start a session / understand a new codebase:**
 ```bash
-kodex overview
+kodex overview                                    # orient
+kodex noise                                       # check what's filtered, review .scalex/noise.conf
 kodex search MainService
 kodex info 'com/example/MainService#'
 ```
