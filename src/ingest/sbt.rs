@@ -133,7 +133,10 @@ impl BuildProvider for SbtProvider {
             .collect();
 
         eprintln!("sbt metadata: {} modules", modules.len());
-        Ok(Some(BuildMetadata { modules }))
+        Ok(Some(BuildMetadata {
+            modules,
+            uri_rewrites: vec![],
+        }))
     }
 
 }

@@ -152,7 +152,10 @@ impl BuildProvider for ScalaCliProvider {
             .collect();
 
         eprintln!("scala-cli metadata: {} modules", modules.len());
-        Ok(Some(BuildMetadata { modules }))
+        Ok(Some(BuildMetadata {
+            modules,
+            uri_rewrites: vec![],
+        }))
     }
 }
 

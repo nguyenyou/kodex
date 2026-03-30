@@ -145,7 +145,10 @@ fn read_mill_metadata_from_out(
     module_out_dirs: &HashMap<String, PathBuf>,
 ) -> Result<BuildMetadata> {
     if module_out_dirs.is_empty() {
-        return Ok(BuildMetadata { modules: vec![] });
+        return Ok(BuildMetadata {
+            modules: vec![],
+            uri_rewrites: vec![],
+        });
     }
 
     let out_dir = root
@@ -199,8 +202,16 @@ fn read_mill_metadata_from_out(
         })
         .collect();
 
+    let uri_rewrites = build_shared_source_rewrites(&modules, &out_dir);
+    if !uri_rewrites.is_empty() {
+        eprintln!("  {} shared-source URI rewrite(s) detected", uri_rewrites.len());
+    }
+
     eprintln!("  {} modules loaded", modules.len());
-    Ok(BuildMetadata { modules })
+    Ok(BuildMetadata {
+        modules,
+        uri_rewrites,
+    })
 }
 
 /// Derive module dependencies from `upstreamCompileOutput.json`.
@@ -236,6 +247,96 @@ fn read_upstream_module_deps(
                 .cloned()
         })
         .collect()
+}
+
+// ── Shared-source URI rewriting ────────────────────────────────────────────
+
+/// Build URI rewrite rules for cross-compiled shared sources.
+///
+/// In Mill cross-platform builds, shared sources are added differently:
+///   - JVM: `sources += shared/src/` (canonical path)
+///   - JS:  `generatedSources += out/.../jsSharedSources.dest/` (copy)
+///
+/// This causes SemanticDB to record different URIs for the same source file.
+/// We detect these copies by finding `generatedSources` paths inside `out/`
+/// whose file contents match a `sources` path from a sibling module.
+///
+/// Returns pairs of (out_prefix, canonical_prefix) as workspace-relative paths.
+fn build_shared_source_rewrites(modules: &[ModuleInfo], out_dir: &Path) -> Vec<(String, String)> {
+    let root = match out_dir.parent() {
+        Some(r) => r,
+        None => return vec![],
+    };
+
+    // Collect all real source paths (non-out/) across all modules
+    let mut canonical_source_dirs: Vec<&str> = Vec::new();
+    for m in modules {
+        for sp in &m.source_paths {
+            if !sp.contains("/out/") {
+                canonical_source_dirs.push(sp.as_str());
+            }
+        }
+    }
+
+    let mut rewrites: Vec<(String, String)> = Vec::new();
+
+    for m in modules {
+        for gen_path in &m.generated_source_paths {
+            // Only process generated sources that live inside out/
+            let gen_abs = Path::new(gen_path);
+            if !gen_abs.starts_with(out_dir) {
+                continue;
+            }
+            // Check if this generated dir's files match any canonical source dir
+            if !gen_abs.exists() || !gen_abs.is_dir() {
+                continue;
+            }
+            for &canonical in &canonical_source_dirs {
+                let canonical_abs = Path::new(canonical);
+                if !canonical_abs.exists() || !canonical_abs.is_dir() {
+                    continue;
+                }
+                if dirs_have_matching_files(gen_abs, canonical_abs) {
+                    // Convert to workspace-relative paths for URI matching
+                    let gen_rel = gen_abs
+                        .strip_prefix(root)
+                        .unwrap_or(gen_abs)
+                        .to_string_lossy()
+                        .to_string();
+                    let canonical_rel = canonical_abs
+                        .strip_prefix(root)
+                        .unwrap_or(canonical_abs)
+                        .to_string_lossy()
+                        .to_string();
+                    rewrites.push((gen_rel, canonical_rel));
+                }
+            }
+        }
+    }
+
+    rewrites
+}
+
+/// Check if two directories contain matching files (same relative paths).
+/// Returns true if the generated dir's files are a subset of the canonical dir.
+fn dirs_have_matching_files(generated: &Path, canonical: &Path) -> bool {
+    let mut gen_files: Vec<PathBuf> = Vec::new();
+    for entry in WalkDir::new(generated)
+        .into_iter()
+        .filter_map(std::result::Result::ok)
+        .filter(|e| e.file_type().is_file())
+    {
+        if let Ok(rel) = entry.path().strip_prefix(generated) {
+            gen_files.push(rel.to_path_buf());
+        }
+    }
+    if gen_files.is_empty() {
+        return false;
+    }
+    // Check that at least one generated file exists in the canonical dir
+    gen_files
+        .iter()
+        .any(|rel| canonical.join(rel).exists())
 }
 
 // ── Ivy dependency readers ──────────────────────────────────────────────────

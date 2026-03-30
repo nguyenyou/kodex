@@ -250,7 +250,27 @@ fn build_index_for_workspace(root: &str) -> anyhow::Result<PathBuf> {
         );
     }
 
-    let documents = ingest::semanticdb::load_all(&discovery.files)?;
+    let mut documents = ingest::semanticdb::load_all(&discovery.files)?;
+
+    // Rewrite URIs for cross-compiled shared sources (e.g., out/.../jsSharedSources.dest/ → shared/src/)
+    if let Some(ref m) = metadata {
+        if !m.uri_rewrites.is_empty() {
+            let mut rewritten = 0usize;
+            for doc in &mut documents {
+                for (from, to) in &m.uri_rewrites {
+                    if doc.uri.starts_with(from.as_str()) {
+                        doc.uri = format!("{}{}", to, &doc.uri[from.len()..]);
+                        rewritten += 1;
+                        break;
+                    }
+                }
+            }
+            if rewritten > 0 {
+                eprintln!("Rewrote {rewritten} shared-source URI(s) to canonical paths");
+            }
+        }
+    }
+
     let t_parse = t0.elapsed();
     let total_symbols: usize = documents.iter().map(|d| d.symbols.len()).sum();
     let total_occs: usize = documents.iter().map(|d| d.occurrences.len()).sum();

@@ -32,6 +32,16 @@ pub struct DiscoveryResult {
 /// Build-tool-agnostic module metadata.
 pub struct BuildMetadata {
     pub modules: Vec<ModuleInfo>,
+    /// URI prefix rewrites for cross-compiled shared sources.
+    ///
+    /// When a build tool copies shared sources to a build output directory
+    /// (e.g., Mill's `generatedSources` copying `shared/src/` to
+    /// `out/.../jsSharedSources.dest/`), SemanticDB records the copy's path
+    /// as the URI. This map rewrites those URIs back to the canonical source path.
+    ///
+    /// Key: `out/` prefix (relative to workspace root, no trailing slash)
+    /// Value: canonical source prefix (relative to workspace root, no trailing slash)
+    pub uri_rewrites: Vec<(String, String)>,
 }
 
 /// Per-module metadata returned by a build provider.

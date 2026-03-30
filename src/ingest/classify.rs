@@ -270,6 +270,7 @@ mod tests {
                     main_class: String::new(),
                     test_framework: String::new(),
                 }],
+                uri_rewrites: vec![],
             }),
             "/workspace",
         );
