@@ -264,7 +264,7 @@ fn run(cli: Cli) -> anyhow::Result<()> {
             let (reader, idx_path) = open_index(cli.idx.as_deref())?;
             if init {
                 let scalex_dir = idx_path.parent().unwrap_or(Path::new("."));
-                let conf_path = query::commands::noise::write_noise_conf(scalex_dir, reader.index())?;
+                let conf_path = query::commands::noise::write_noise_conf(scalex_dir, reader.index(), limit)?;
                 eprintln!("Wrote {}", conf_path.display());
             }
             emit(query::commands::noise::cmd_noise(reader.index(), limit));
@@ -346,10 +346,16 @@ fn build_index_for_workspace(root: &str) -> anyhow::Result<PathBuf> {
     let idx_path = scalex_dir.join("kodex.idx");
     index::writer::write_index(&built, &idx_path)?;
 
-    // Generate noise config from the freshly built index
-    let reader = index::reader::IndexReader::open(&idx_path)?;
-    let conf_path = query::commands::noise::write_noise_conf(&scalex_dir, reader.index())?;
-    eprintln!("Noise config: {}", conf_path.display());
+    // Generate noise config only if it doesn't already exist — preserve user edits.
+    // Use `kodex noise --init` to explicitly regenerate.
+    let conf_path = scalex_dir.join("noise.conf");
+    if !conf_path.exists() {
+        let reader = index::reader::IndexReader::open(&idx_path)?;
+        query::commands::noise::write_noise_conf(&scalex_dir, reader.index(), 15)?;
+        eprintln!("Noise config: {}", conf_path.display());
+    } else {
+        eprintln!("Noise config: {} (preserved)", conf_path.display());
+    }
 
     let t_total = t0.elapsed();
     eprintln!("Total: {:.1}s", t_total.as_secs_f64());
