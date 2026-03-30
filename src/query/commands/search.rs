@@ -37,10 +37,19 @@ pub fn cmd_search(
     kind_filter: Option<&str>,
     module_filter: Option<&str>,
     exclude: &[String],
+    include_noise: bool,
 ) -> CommandResult {
     let mut candidates = resolve_filtered(index, query, kind_filter, module_filter);
     if candidates.is_empty() {
         return CommandResult::symbol_not_found(index, query);
+    }
+
+    // Baseline noise filter: exclude generated, test, stdlib, plumbing symbols
+    if !include_noise {
+        candidates.retain(|sym| !crate::query::filter::is_noise(index, sym));
+        if candidates.is_empty() {
+            return CommandResult::symbol_not_found(index, query);
+        }
     }
 
     if !exclude.is_empty() {
