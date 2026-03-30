@@ -1,0 +1,8 @@
+out/
+.bsp/
+.metals/
+.scalex/
+mill
+mill.*
+.mill-jvm-opts
+*.semanticdb
