@@ -10,7 +10,11 @@ You have access to `kodex`, a Scala code intelligence CLI. It fuses two knowledg
 
 This lets kodex answer structural questions that text search cannot: who calls a method through trait indirection, what a method calls across module boundaries, what implements a trait.
 
-kodex `info` includes **source code** in its output, so you rarely need a separate file read.
+kodex `info` includes **full source code** in its output, so you rarely need a separate file read.
+
+## Parallel-safe: all commands exit 0
+
+Every kodex command always exits with code 0. Errors (unknown flags, missing index, bad arguments) are printed to stdout as values, not as non-zero exit codes. This means you can safely run multiple kodex commands in parallel — one command's error will never cancel sibling parallel calls. **Maximize throughput by running independent queries in parallel.**
 
 ## Critical: FQN quoting
 
@@ -57,6 +61,16 @@ kodex index --root .
 
 Re-run both steps after code changes. If `.scalex/kodex.idx` exists and code hasn't changed, skip to querying.
 
+### Cross-project queries
+
+By default kodex looks for `.scalex/kodex.idx` in the current directory. To query a different project:
+
+```bash
+kodex search Auth --idx /path/to/other-project/.scalex/kodex.idx
+```
+
+Or set the `KODEX_IDX` environment variable. The `--idx` flag is global — it works with all commands.
+
 ## Core workflow
 
 ```
@@ -97,7 +111,16 @@ Module names shown here work directly with `search --module`.
 kodex search <QUERY> [--kind K] [--module M] [--limit N] [--exclude "p1,p2"] [--include-noise]
 ```
 
-Finds symbols using a 9-step cascade — exact names, substrings, CamelCase abbreviations, typos:
+Finds symbols using a resolution cascade — each step tries progressively fuzzier matching, returning on first hit:
+
+1. **Exact FQN** — trigram-narrowed, O(k) lookup
+2. **FQN suffix** — matches end of full FQN
+3. **Owner.member** — dotted notation up to 5 levels deep: `Component.Backend.render`
+4. **Exact display name** — O(1) hash lookup, case-insensitive
+5. **Substring** — trigram-accelerated substring on display name
+6. **Substring fallback** — linear scan for short queries where trigrams are unavailable
+7. **CamelCase** — two strategies: segment matching (`hcf` → `HttpClientFactory`) and character subsequence (`lpfuse` → `linkProfileForUser`)
+8. **Fuzzy** — Damerau-Levenshtein with adaptive threshold, catches typos
 
 ```bash
 kodex search OrderService                         # exact name
@@ -109,6 +132,14 @@ kodex search OrderService --module storage        # filter by module
 kodex search Component.Backend.render             # nested owner.member
 ```
 
+**Module-only mode** — list all symbols in a module without a search query:
+
+```bash
+kodex search --module auth                        # all symbols in auth module
+kodex search --module auth --kind trait           # all traits in auth module
+kodex search --module billing.jvm --kind class    # all classes in billing JVM module
+```
+
 **Flags:**
 - `--kind`: class, trait, object, method, field, type, constructor
 - `--module`: substring match, or dotted segments in order (e.g. `storage.jvm` matches `modules.storage.storage.jvm`)
@@ -116,33 +147,46 @@ kodex search Component.Backend.render             # nested owner.member
 - `--include-noise`: include noise (generated code, plumbing methods, etc.) — excluded by default
 - `--exclude "p1,p2"`: manual comma-separated exclusion patterns
 
-**Output — single match** (enough to proceed, no further search needed):
+**Output — single match** (auto-expanded detail view — includes signature and parents):
 ```
 trait OrderService — modules.orders.orders.jvm — src/com/example/OrderService.scala:10-50
   fqn: com/example/OrderService#
-  referenced: 123 sites across 4 modules
+  signature: sealed trait OrderService extends BaseService { ... }
+  parents: com/example/BaseService#
 ```
 
 **Output — multiple matches** (narrow with `--kind` or `--module`):
 ```
 5 symbols matching 'Service'
-  trait OrderService — modules.orders.orders.jvm — src/com/example/OrderService.scala
-  class ServiceImpl — modules.server.server.jvm — src/com/example/impl/ServiceImpl.scala
-  ... and 3 more (use --limit 0 for all)
+  trait OrderService [sealed] (src/com/example/OrderService.scala:10-50)
+    fqn: com/example/OrderService#
+  class ServiceImpl [final, case] (src/com/example/impl/ServiceImpl.scala:5)
+    fqn: com/example/impl/ServiceImpl#
+  ...
+```
+
+**Kind-aware suggestions** — when `--kind` yields no results but the query matches other kinds:
+```
+Not found: No trait found matching 'createOrder'
+Found under other kinds:
+  method createOrder (src/com/example/OrderService.scala:45-78)
+    fqn: com/example/OrderService#createOrder().
 ```
 
 Every result includes an FQN — copy it directly into `info`, `calls`, or `refs`.
 
+**Ranking:** Results are ranked by a composite score: type-level definitions (class/trait) surface first, source files outrank test/generated, popular symbols (by reference count) rank higher, and shorter names are preferred. For scored steps (CamelCase, fuzzy), match quality is primary, composite is tiebreaker.
+
 ### `info` — complete picture in one call
 
 ```bash
-kodex info '<FQN>'
+kodex info '<FQN>' [--include-noise] [--exclude "p1,p2"]
 ```
 
-The most powerful command. Noise is excluded by default. Returns everything about a symbol in structured sections:
+The most powerful command. Returns everything about a symbol in structured sections:
 
 ```
-method createOrder — modules.orders.orders.jvm — src/com/example/OrderService.scala:45-78
+method createOrder [modules.orders.orders.jvm] — src/com/example/OrderService.scala:45-78
   fqn: com/example/OrderService#createOrder().
   referenced: 42 sites across 3 modules
   access: public
@@ -153,50 +197,53 @@ method createOrder — modules.orders.orders.jvm — src/com/example/OrderServic
   Owner: trait OrderService
     fqn: com/example/OrderService#
 
-  Overrides (1):
-    createOrder — fqn: com/example/BaseService#createOrder().
+  Overrides (1):                                # what this symbol overrides
+    createOrder
+      fqn: com/example/BaseService#createOrder().
 
-  Extends: BaseService
+  Overridden by (2):                            # who overrides this symbol
+    method createOrder — src/com/example/impl/OrderServiceImpl.scala
+      fqn: com/example/impl/OrderServiceImpl#createOrder().
+
+  Extends: BaseService                          # parents (Object/Product/Serializable filtered out)
     fqn: com/example/BaseService#
 
-  Members (5):                              # (only for types — class/trait/object)
-    def validateOrder ...
+  Members (5):                                  # only for types — sorted: types → methods → vals/DI fields
+    def validateOrder(req: CreateRequest): Future[Valid]
       fqn: com/example/OrderService#validateOrder().
-    ...
+    val method orderRepository: OrderRepository
+      fqn: com/example/OrderService#orderRepository.
 
-  Implementations (3):                      # (only for traits/abstract classes)
-    class OrderServiceImpl ...
+  Implementations (3):                          # only for traits/abstract classes
+    class OrderServiceImpl — src/com/example/impl/OrderServiceImpl.scala
       fqn: com/example/impl/OrderServiceImpl#
 
-  Call graph (depth 1):
+  Call graph (depth 1):                         # only for methods/fields — capped at 50
+
     Callers — who calls this (5):
-      Handler.handle — modules.api.api.jvm — src/com/example/Handler.scala
+      Handler.handle [modules.api.api.jvm] — src/com/example/Handler.scala
         fqn: com/example/Handler#handle().
 
     Callees — what this calls (3):
-      1. validateOrder
+      1. OrderService.validateOrder
          fqn: com/example/OrderService#validateOrder().
-      2. DB.save — cross-module — modules.storage.storage.jvm
+      2. DB.save [modules.storage.storage.jvm] — cross-module
          fqn: com/example/storage/DB#save().
-
-    15+ callers/callees? Run: kodex calls 'com/example/OrderService#createOrder().' --depth 2
 
   Source:
      45 | def createOrder(req: CreateRequest): Future[Order] = {
      46 |   validateOrder(req).flatMap { valid =>
      47 |     DB.save(req.toPersisted)
      ...
+     78 | }
 ```
 
 **What to notice in info output:**
 - Every sub-symbol has an FQN — copy-paste to chain `info` calls without re-searching
 - Call graph entries marked `cross-module` indicate module boundaries — key for architecture understanding
-- When callers/callees are capped at 15, info prints the exact `calls` command to run. **Follow that hint.**
-- Source code is included — you usually don't need a separate file read
-
-**Flags:**
-- `--include-noise`: include noise (generated code, plumbing methods, etc.) — excluded by default
-- `--exclude "p1,p2"`: manual comma-separated exclusion patterns
+- When callers/callees exceed 50, info prints the exact `calls` command to run. **Follow that hint.**
+- **Full source code** is included (complete method/class body) — you usually don't need a separate file read
+- Members are sorted: types first, then methods, then vals (DI injections sink to bottom)
 
 ### `calls` — call tree traversal
 
@@ -207,27 +254,30 @@ kodex calls '<FQN>' -r --depth 3           # upstream (callers)
 
 Recursive call tree with box-drawing connectors:
 ```
-createOrder
+createOrder [modules.orders.orders.jvm]
 ├── validateOrder
 │   └── Validator.check
-├── DB.save — cross-module — modules.storage.storage.jvm
+├── DB.save [modules.storage.storage.jvm] — cross-module
 │   └── Connection.execute
 │       └── Pool.acquire (cycle detected)
-└── EventBus.publish — cross-module — modules.events.events.jvm
+└── EventBus.publish [modules.events.events.jvm] — cross-module
 ```
 
 **Reading the output:**
 - Indentation = call depth
 - `— cross-module — module.name` = call crosses a module boundary
-- `(cycle detected)` = recursion stopped, already visited
+- Cycle detection prevents infinite traversal at already-visited nodes
+- Empty tree: if no callers/callees found, shows the resolved file path and suggests alternative FQNs that DO have call edges — useful when you picked the wrong overload
+
+**Trait-aware callers:** When walking upstream (`-r`), kodex automatically includes callers of the base trait/abstract method, not just the concrete implementation. So `kodex calls -r 'impl/OrderServiceImpl#create().'` will also find callers that call `trait/OrderService#create().` — essential for understanding polymorphic call sites in Scala codebases.
 
 **Flags:**
 - `--depth N`: default 3
 - `-r, --reverse`: walk callers instead of callees
-- `--include-noise`: include noise (generated code, plumbing methods, etc.) — excluded by default
-- `--exclude "p1,p2"`: manual comma-separated exclusion patterns
+- `--include-noise`: include noise — excluded by default
+- `--exclude "p1,p2"`: manual exclusion patterns
 
-Use `calls` when `info`'s depth-1 preview (capped at 15) isn't enough.
+Use `calls` when `info`'s depth-1 preview (capped at 50) isn't enough.
 
 ### `refs` — where is a symbol used?
 
@@ -252,7 +302,10 @@ Locations:
   ...
 ```
 
-`--limit`: default 100 file locations (0=unlimited). Header and module summary always show full totals.
+**Details:**
+- `--limit` caps the number of file locations shown (default 100, 0=unlimited). Header and module summary always show full totals regardless of limit.
+- Only shows reference sites — definitions are excluded (you already know where it's defined from `info`).
+- Line numbers are deduped and comma-separated per file.
 
 **When to use refs:** `info` shows callers/callees for methods. For **types** (class/trait), `refs` is the way to see usage across the codebase — `info` won't show type references in its call graph.
 
@@ -276,10 +329,11 @@ Outputs a ready-to-use `--exclude` pattern. Run once on a new codebase to see wh
 
 Noise is **excluded by default** — no flag needed. This covers:
 
-- Generated code and plumbing methods
-- stdlib (scala/\*, java/\*), test files, generated files
-- Plumbing methods (apply, map, flatMap, etc.), synthetic symbols
-- Boilerplate parents (Object, Product, Serializable)
+- **stdlib**: scala/Predef, scala/Option, scala/collection/\*, java/lang/\*, java/util/\*, etc.
+- **Plumbing methods**: apply, unapply, map, flatMap, filter, foreach, collect, foldLeft, foldRight, get, getOrElse, orElse, succeed, pure, attempt, traverse, etc.
+- **Test files and generated files** (ScalaPB, protobuf, src_managed, BuildInfo)
+- **Call graph extras**: val/var accessors (dependency wiring, not real calls), $default$ parameter accessors, tuple accessors (_1, _2), synthetic names
+- **Boilerplate parents**: Object, Product, Serializable are filtered from the Extends section
 
 To **include** noise in results, pass `--include-noise`:
 
@@ -289,7 +343,7 @@ kodex calls '<FQN>' --depth 3 --include-noise
 kodex search Query --include-noise
 ```
 
-`--exclude "Pattern1,Pattern2"` gives additional manual control for custom exclusion patterns.
+`--exclude "Pattern1,Pattern2"` gives additional manual control — patterns match against FQN, symbol name, and owner name (substring match).
 
 ## FQN format
 
@@ -311,7 +365,7 @@ kodex search Query --include-noise
 | `--limit N` | search, refs, noise | 50 / 100 / 15 | Max results (0=unlimited) |
 | `--depth N` | calls | 3 | Call tree recursion depth |
 | `-r, --reverse` | calls | off | Walk callers instead of callees |
-| `--include-noise` | search, info, calls | off | Include noise (generated code, plumbing) — excluded by default |
+| `--include-noise` | search, info, calls | off | Include noise — excluded by default |
 | `--exclude P` | search, info, calls | — | Manual comma-separated exclusion patterns |
 | `--root PATH` | index | `.` | Workspace root |
 | `--idx PATH` | all | `.scalex/kodex.idx` | Override index path (or `KODEX_IDX` env var) |
@@ -347,7 +401,32 @@ kodex info 'com/example/Repository#'                    # Implementations sectio
 **Explore a specific module:**
 ```bash
 kodex overview                                          # see module names
-kodex search Service --kind trait --module auth
+kodex search --module auth --kind trait                 # all traits in auth module
+kodex search Service --kind trait --module auth         # search within a module
+```
+
+**Parallel queries for maximum throughput:**
+```bash
+# Run these in parallel — all exit 0, safe to parallelize
+kodex search LoginService &
+kodex search AuthenticationService &
+kodex search SessionManager &
+wait
+```
+
+```bash
+# Get info on multiple symbols in parallel
+kodex info 'com/example/LoginService#' &
+kodex info 'com/example/AuthService#' &
+kodex info 'com/example/SessionManager#' &
+wait
+```
+
+```bash
+# Get both call graph and references in parallel
+kodex calls 'com/example/Service#create().' --depth 3 &
+kodex refs 'com/example/Service#create().' &
+wait
 ```
 
 ## Troubleshooting
@@ -359,3 +438,5 @@ kodex search Service --kind trait --module auth
 - **Symbol not found**: Try a shorter substring, CamelCase abbreviation, or `Owner.member` syntax.
 - **info/calls/refs "Not found"**: These need exact FQNs. Run `search` first, then copy the FQN.
 - **Shell errors with FQNs**: Single-quote FQNs: `kodex info 'com/example/Foo#bar().'`
+- **Wrong overload picked**: `calls` shows an empty tree? Check the diagnostic — it suggests alternative FQNs with call edges.
+- **Missing callers for override**: Callers are trait-aware automatically. If callers look incomplete, the base trait method's FQN may differ — check `info`'s Overrides section.
