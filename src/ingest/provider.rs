@@ -39,8 +39,8 @@ pub struct BuildMetadata {
     /// `out/.../jsSharedSources.dest/`), SemanticDB records the copy's path
     /// as the URI. This map rewrites those URIs back to the canonical source path.
     ///
-    /// Key: `out/` prefix (relative to workspace root, no trailing slash)
-    /// Value: canonical source prefix (relative to workspace root, no trailing slash)
+    /// Key: `out/` prefix (relative to workspace root, with trailing slash)
+    /// Value: canonical source prefix (relative to workspace root, with trailing slash)
     pub uri_rewrites: Vec<(String, String)>,
 }
 

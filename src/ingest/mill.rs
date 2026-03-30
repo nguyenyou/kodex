@@ -268,75 +268,86 @@ fn build_shared_source_rewrites(modules: &[ModuleInfo], out_dir: &Path) -> Vec<(
         None => return vec![],
     };
 
-    // Collect all real source paths (non-out/) across all modules
-    let mut canonical_source_dirs: Vec<&str> = Vec::new();
-    for m in modules {
-        for sp in &m.source_paths {
-            if !sp.contains("/out/") {
-                canonical_source_dirs.push(sp.as_str());
-            }
-        }
-    }
+    // Collect all real source paths that are NOT inside out/ across all modules.
+    // Use starts_with(out_dir) instead of substring match to avoid false positives
+    // on workspace paths containing "out" (e.g., /checkout-out/project/).
+    let canonical_source_dirs: Vec<&str> = modules
+        .iter()
+        .flat_map(|m| m.source_paths.iter())
+        .filter(|sp| !Path::new(sp.as_str()).starts_with(out_dir))
+        .map(String::as_str)
+        .collect();
 
     let mut rewrites: Vec<(String, String)> = Vec::new();
 
     for m in modules {
         for gen_path in &m.generated_source_paths {
-            // Only process generated sources that live inside out/
-            let gen_abs = Path::new(gen_path);
+            // Only process generated sources that live inside out/.
+            // Canonicalize to handle macOS symlinks (/private/var vs /var).
+            let gen_abs = match Path::new(gen_path).canonicalize() {
+                Ok(p) => p,
+                Err(_) => continue,
+            };
             if !gen_abs.starts_with(out_dir) {
                 continue;
             }
-            // Check if this generated dir's files match any canonical source dir
-            if !gen_abs.exists() || !gen_abs.is_dir() {
+            if !gen_abs.is_dir() {
                 continue;
             }
             for &canonical in &canonical_source_dirs {
-                let canonical_abs = Path::new(canonical);
-                if !canonical_abs.exists() || !canonical_abs.is_dir() {
+                let canonical_abs = match Path::new(canonical).canonicalize() {
+                    Ok(p) => p,
+                    Err(_) => continue,
+                };
+                if !canonical_abs.is_dir() {
                     continue;
                 }
-                if dirs_have_matching_files(gen_abs, canonical_abs) {
-                    // Convert to workspace-relative paths for URI matching
-                    let gen_rel = gen_abs
-                        .strip_prefix(root)
-                        .unwrap_or(gen_abs)
-                        .to_string_lossy()
-                        .to_string();
-                    let canonical_rel = canonical_abs
-                        .strip_prefix(root)
-                        .unwrap_or(canonical_abs)
-                        .to_string_lossy()
-                        .to_string();
+                if dirs_have_matching_files(&gen_abs, &canonical_abs) {
+                    // Convert to workspace-relative paths for URI matching.
+                    // Append "/" for path-boundary-safe prefix matching
+                    // (prevents "dest2" matching "dest").
+                    let gen_rel = format!(
+                        "{}/",
+                        gen_abs
+                            .strip_prefix(root)
+                            .unwrap_or(&gen_abs)
+                            .to_string_lossy()
+                    );
+                    let canonical_rel = format!(
+                        "{}/",
+                        canonical_abs
+                            .strip_prefix(root)
+                            .unwrap_or(&canonical_abs)
+                            .to_string_lossy()
+                    );
                     rewrites.push((gen_rel, canonical_rel));
                 }
             }
         }
     }
 
+    rewrites.sort();
+    rewrites.dedup();
     rewrites
 }
 
 /// Check if two directories contain matching files (same relative paths).
-/// Returns true if the generated dir's files are a subset of the canonical dir.
+/// Returns true if ALL files in the generated dir also exist in the canonical dir.
 fn dirs_have_matching_files(generated: &Path, canonical: &Path) -> bool {
-    let mut gen_files: Vec<PathBuf> = Vec::new();
-    for entry in WalkDir::new(generated)
+    let gen_files: Vec<PathBuf> = WalkDir::new(generated)
         .into_iter()
         .filter_map(std::result::Result::ok)
         .filter(|e| e.file_type().is_file())
-    {
-        if let Ok(rel) = entry.path().strip_prefix(generated) {
-            gen_files.push(rel.to_path_buf());
-        }
-    }
+        .filter_map(|e| e.path().strip_prefix(generated).ok().map(PathBuf::from))
+        .collect();
+
     if gen_files.is_empty() {
         return false;
     }
-    // Check that at least one generated file exists in the canonical dir
+    // All generated files must exist in the canonical dir (true subset check)
     gen_files
         .iter()
-        .any(|rel| canonical.join(rel).exists())
+        .all(|rel| canonical.join(rel).exists())
 }
 
 // ── Ivy dependency readers ──────────────────────────────────────────────────
