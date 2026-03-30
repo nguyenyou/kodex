@@ -51,7 +51,7 @@ src/
 
 ## Project Stage
 
-Early stage — breaking changes are expected and welcome. Do not add backwards-compatibility shims, aliases, or deprecation paths. Just change things directly.
+Early stage — breaking changes are expected and welcome. Always do the right thing for the current design, even if it breaks the old interface. Never preserve backward compatibility at the cost of code quality: no compatibility shims, no aliases for old names, no deprecation paths, no re-exports of moved symbols, no "legacy" fallbacks. If something should be renamed, rename it everywhere. If a flag should change, change it. If an output format improves, ship the new format. Users will adapt — stale compatibility code is harder to remove later than a clean break is to absorb now.
 
 ## Code Conventions
 
