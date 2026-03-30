@@ -6,20 +6,13 @@ use std::fmt::Write;
 
 /// Search for symbol definitions.
 ///
-/// # Resolution (9-step cascade, returns on first hit)
+/// # Modes
 ///
-/// 1. Exact FQN → 2. FQN suffix → 3. Owner.member (dotted, nested) →
-/// 4. Exact name (O(1) hash) → 5. Prefix (<5 chars) → 6. Substring (trigram) →
-/// 7. Substring (linear fallback) → 8. CamelCase (segment + char subsequence) →
-/// 9. Fuzzy (Damerau-Levenshtein)
-///
-/// Step 8 uses two complementary matchers:
-/// - **Segment matching**: splits query and candidate on CamelCase boundaries,
-///   matches segments in order (abbreviation: `hcf` → `HttpClientFactory`,
-///   subsequence: `UserService` → `UserProfileService`)
-/// - **Character subsequence**: matches each query char greedily, skipping to
-///   the next CamelCase boundary on mismatch (`lpfuse` → `linkProfileForUser`).
-///   Handles all-lowercase abbreviations that segment matching misses.
+/// - **Query mode** (`query` is `Some`): resolves symbols via a 9-step cascade
+///   (exact FQN → suffix → owner.member → exact name → prefix → substring →
+///   CamelCase → fuzzy), then applies kind/module/noise/exclude filters.
+/// - **Module-only mode** (`query` is `None`, `module_filter` is `Some`): lists
+///   all symbols in the matching module, filtered by kind/noise/exclude.
 ///
 /// # Ranking
 ///
@@ -49,21 +42,21 @@ pub fn cmd_search(
     };
 
     if candidates.is_empty() {
-        return not_found_message(index, query, kind_filter, module_filter);
+        return not_found_message(index, query, kind_filter, module_filter, exclude, include_noise);
     }
 
     // Baseline noise filter: exclude generated, test, stdlib, plumbing symbols
     if !include_noise {
         candidates.retain(|sym| !crate::query::filter::is_noise(index, sym));
         if candidates.is_empty() {
-            return not_found_message(index, query, kind_filter, module_filter);
+            return not_found_message(index, query, kind_filter, module_filter, exclude, include_noise);
         }
     }
 
     if !exclude.is_empty() {
         candidates.retain(|sym| !crate::query::filter::matches_exclude(index, sym, exclude));
         if candidates.is_empty() {
-            return not_found_message(index, query, kind_filter, module_filter);
+            return not_found_message(index, query, kind_filter, module_filter, exclude, include_noise);
         }
     }
 
@@ -100,31 +93,44 @@ pub fn cmd_search(
 }
 
 /// Build an appropriate not-found message, with kind-aware suggestions when applicable.
+///
+/// Propagates `exclude` and `include_noise` so suggestions respect the same filters
+/// as the primary search.
 fn not_found_message(
     index: &ArchivedKodexIndex,
     query: Option<&str>,
     kind_filter: Option<&str>,
     module_filter: Option<&str>,
+    exclude: &[String],
+    include_noise: bool,
 ) -> CommandResult {
     // Feature #5: kind-aware suggestions
     // When --kind was specified but yielded no results, check if the query matches
     // symbols of other kinds and suggest those.
     if let (Some(q), Some(kind)) = (query, kind_filter) {
-        let without_kind = resolve_filtered(index, q, None, module_filter);
-        // Filter noise out of suggestions too
-        let suggestions: Vec<_> = without_kind
-            .into_iter()
-            .filter(|sym| !crate::query::filter::is_noise(index, sym))
-            .collect();
-        if !suggestions.is_empty() {
-            let mut out = format!("Not found: No {kind} found matching '{q}'\n");
-            out.push_str("Found under other kinds:\n");
-            let show_limit = suggestions.len().min(10);
-            for s in suggestions.iter().take(show_limit) {
+        // Use resolve_symbols directly to avoid spurious stderr warning from resolve_filtered
+        // when module_filter matches nothing in the re-query path.
+        let mut without_kind = crate::query::symbol::resolve_symbols(index, q);
+        if let Some(mp) = module_filter {
+            without_kind = crate::query::filter::filter_by_module(index, &without_kind, mp);
+        }
+        // Apply same noise/exclude filters as the primary search
+        if !include_noise {
+            without_kind.retain(|sym| !crate::query::filter::is_noise(index, sym));
+        }
+        if !exclude.is_empty() {
+            without_kind.retain(|sym| !crate::query::filter::matches_exclude(index, sym, exclude));
+        }
+        if !without_kind.is_empty() {
+            let mut out = String::new();
+            writeln!(out, "Not found: No {kind} found matching '{q}'").unwrap();
+            writeln!(out, "Found under other kinds:").unwrap();
+            let show_limit = without_kind.len().min(10);
+            for s in without_kind.iter().take(show_limit) {
                 writeln!(out, "{}", format_symbol_line(index, s)).unwrap();
             }
-            if suggestions.len() > show_limit {
-                writeln!(out, "  ... and {} more", suggestions.len() - show_limit).unwrap();
+            if without_kind.len() > show_limit {
+                writeln!(out, "  ... and {} more", without_kind.len() - show_limit).unwrap();
             }
             return CommandResult::NotFound(out);
         }
@@ -133,12 +139,13 @@ fn not_found_message(
     // Module-only mode not-found
     if query.is_none() {
         if let Some(m) = module_filter {
-            let msg = if let Some(kind) = kind_filter {
-                format!("Not found: No {kind} symbols in module '{m}'\n")
+            let mut out = String::new();
+            if let Some(kind) = kind_filter {
+                writeln!(out, "Not found: No {kind} symbols in module '{m}'").unwrap();
             } else {
-                format!("Not found: No symbols in module '{m}'\n")
-            };
-            return CommandResult::NotFound(msg);
+                writeln!(out, "Not found: No symbols in module '{m}'").unwrap();
+            }
+            return CommandResult::NotFound(out);
         }
     }
 
