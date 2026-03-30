@@ -81,6 +81,6 @@ Early stage — breaking changes are expected and welcome. Do not add backwards-
 4. Tag and push: `git tag vX.Y.Z && git push origin vX.Y.Z`
 5. GitHub Actions builds binaries (macOS ARM64, macOS x64, Linux x64) and creates release with changelog body extracted via awk
 6. Update bootstrap script checksums: download `.sha256` files from the release, update `EXPECTED_VERSION` and `CHECKSUM_*` vars in the kodex skill's `scripts/kodex-cli`
-7. Bump `version` in `.claude-plugin/marketplace.json` to match `Cargo.toml`
+7. Bump `version` in `.claude-plugin/marketplace.json` to match `Cargo.toml` — this is the **last** step, do NOT bump it in the version commit (step 2)
 
 **Changelog format:** Keep a Changelog style — `## [VERSION] — DATE` headers, `### Added`/`### Changed`/`### Fixed` sections. The release workflow extracts the matching version section with awk.
