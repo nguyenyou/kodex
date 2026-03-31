@@ -21,26 +21,20 @@ This tool is built for **reading code, not writing code**.
 
 ## Quick Start
 
-**1. 🌾 Feed the raven** — compile SemanticDB:
-
-```
-./mill __.semanticDbData
-```
-
-> Also works with **sbt** and **scala-cli** — kodex knows how to set those up too. I encourage you to run the compile yourself so you stay in control of the build.
-
-**2. 🪶 Summon it** — install the plugin:
+**1. 🪶 Summon it** — install the plugin (one-time):
 
 ```
 /plugin marketplace add nguyenyou/kodex
 /plugin install kodex@kodex-marketplace
 ```
 
-**3. 🚀 Let it fly** — ask away:
+**2. 🚀 Let it fly** — ask away:
 
 ```
 use kodex to explore how authentication works in this codebase
 ```
+
+> The coding agent knows how to compile SemanticDB for Mill, sbt, and scala-cli projects — just ask and it will handle the build for you.
 
 ## Recommended Workflows
 
