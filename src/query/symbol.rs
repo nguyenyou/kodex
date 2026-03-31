@@ -933,10 +933,52 @@ fn char_subsequence_score(query: &str, candidate_name: &str) -> Option<u32> {
     }
 }
 
+/// Extract the terminal symbol name from an FQN.
+/// `"com/example/Service#process()."` → `"process"`
+/// `"com/example/Service#process(Ljava/lang/String;)."` → `"process"`
+/// `"com/example/Service#"` → `"Service"`
+/// `"com/example/Service."` → `"Service"`
+fn extract_name_from_fqn(fqn: &str) -> &str {
+    let trimmed = fqn.trim_end_matches('.');
+    // Strip any trailing parameter list: "()", "(Int)", "(Ljava/lang/String;)", etc.
+    let trimmed = if let Some(paren_pos) = trimmed.rfind('(') {
+        &trimmed[..paren_pos]
+    } else {
+        trimmed
+    };
+    if let Some(pos) = trimmed.rfind('#').or_else(|| trimmed.rfind('/')) {
+        &trimmed[pos + 1..]
+    } else {
+        trimmed
+    }
+}
+
 /// Find "Did you mean: X?" suggestions when a query finds nothing.
 /// Uses Damerau-Levenshtein with a threshold scaled to query length.
 /// Returns formatted suggestion text (empty string if no suggestions).
 pub fn suggest_similar(index: &ArchivedKodexIndex, query: &str) -> String {
+    // FQN-aware suggestion: if query looks like an FQN, extract the method/type
+    // name and search for it globally. This catches cases like passing
+    // "com/example/FooService#bar()." when the method actually lives on BarService.
+    if query.contains('/') || query.contains('#') {
+        let method_name = extract_name_from_fqn(query);
+        if !method_name.is_empty() && method_name != query {
+            let matches = resolve_symbols(index, method_name);
+            if !matches.is_empty() {
+                let mut out = String::new();
+                writeln!(out, "Did you mean:").unwrap();
+                for sym in matches.iter().take(5) {
+                    let fqn = s(index, sym.fqn);
+                    let name = s(index, sym.name);
+                    let kind = display_kind(sym);
+                    writeln!(out, "  {kind} {name}").unwrap();
+                    writeln!(out, "    fqn: {fqn}").unwrap();
+                }
+                return out;
+            }
+        }
+    }
+
     let max_dist = fuzzy_threshold(query.len());
     let query_lower = query.to_ascii_lowercase();
     let mut suggestions: Vec<(&str, usize)> = Vec::new();

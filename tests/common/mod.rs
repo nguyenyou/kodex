@@ -570,6 +570,312 @@ pub fn make_property_kind_docs() -> Vec<IntermediateDoc> {
     }]
 }
 
+/// Large codebase fixture for testing noise detection thresholds.
+///
+/// 50 modules with 4 shared types at different reference/module-spread levels:
+///   - `RequestContext` (class): ~200 refs across 25 modules — domain type, should NOT be noise
+///   - `DatabaseDriver` (class): ~600 refs across 45 modules — infra type, SHOULD be noise
+///   - `AuthContext` (trait): ~150 refs across 20 modules — domain type, should NOT be noise
+///   - `StringUtils` (object): ~400 refs across 40 modules — utility type, SHOULD be noise
+///
+/// Also includes `RequestContext#userId` as a leaf method (many call sites, 0 callees)
+/// to test that effect plumbing emits method-level patterns, not type-level.
+#[allow(dead_code)]
+pub fn make_hub_noise_docs() -> Vec<IntermediateDoc> {
+    let num_modules = 50;
+    let mut docs = Vec::new();
+
+    // ── Module 0: define shared types ──
+    docs.push(IntermediateDoc {
+        uri: "modules/mod00/src/com/example/RequestContext.scala".to_string(),
+        module_segments: "modules.mod00".to_string(),
+        symbols: vec![
+            IntermediateSymbol {
+                fqn: "com/example/RequestContext#".to_string(),
+                display_name: "RequestContext".to_string(),
+                kind: SymbolKind::Class,
+                properties: 0,
+                signature: "class RequestContext".to_string(),
+                parents: vec![],
+                overridden_symbols: vec![],
+                access: Access::Public,
+            },
+            IntermediateSymbol {
+                fqn: "com/example/RequestContext#userId().".to_string(),
+                display_name: "userId".to_string(),
+                kind: SymbolKind::Method,
+                properties: 0,
+                signature: "def userId: UserId".to_string(),
+                parents: vec![],
+                overridden_symbols: vec![],
+                access: Access::Public,
+            },
+            IntermediateSymbol {
+                fqn: "com/example/DatabaseDriver#".to_string(),
+                display_name: "DatabaseDriver".to_string(),
+                kind: SymbolKind::Class,
+                properties: 0,
+                signature: "class DatabaseDriver".to_string(),
+                parents: vec![],
+                overridden_symbols: vec![],
+                access: Access::Public,
+            },
+            IntermediateSymbol {
+                fqn: "com/example/AuthContext#".to_string(),
+                display_name: "AuthContext".to_string(),
+                kind: SymbolKind::Trait,
+                properties: 0x4, // abstract
+                signature: "trait AuthContext".to_string(),
+                parents: vec![],
+                overridden_symbols: vec![],
+                access: Access::Public,
+            },
+            IntermediateSymbol {
+                fqn: "com/example/StringUtils.".to_string(),
+                display_name: "StringUtils".to_string(),
+                kind: SymbolKind::Object,
+                properties: 0x8, // final
+                signature: "object StringUtils".to_string(),
+                parents: vec![],
+                overridden_symbols: vec![],
+                access: Access::Public,
+            },
+        ],
+        occurrences: vec![
+            IntermediateOccurrence {
+                symbol: "com/example/RequestContext#".to_string(),
+                role: ReferenceRole::Definition,
+                start_line: 3, start_col: 6, end_col: 20,
+            },
+            IntermediateOccurrence {
+                symbol: "com/example/RequestContext#userId().".to_string(),
+                role: ReferenceRole::Definition,
+                start_line: 4, start_col: 6, end_col: 12,
+            },
+            IntermediateOccurrence {
+                symbol: "com/example/DatabaseDriver#".to_string(),
+                role: ReferenceRole::Definition,
+                start_line: 10, start_col: 6, end_col: 20,
+            },
+            IntermediateOccurrence {
+                symbol: "com/example/AuthContext#".to_string(),
+                role: ReferenceRole::Definition,
+                start_line: 15, start_col: 6, end_col: 17,
+            },
+            IntermediateOccurrence {
+                symbol: "com/example/StringUtils.".to_string(),
+                role: ReferenceRole::Definition,
+                start_line: 20, start_col: 7, end_col: 18,
+            },
+        ],
+    });
+
+    // ── Modules 1..49: reference shared types at varying rates ──
+    for i in 1..num_modules {
+        let module_name = format!("modules.mod{i:02}");
+        let uri = format!("modules/mod{i:02}/src/com/example/Mod{i:02}Service.scala");
+
+        // Each module has its own service class
+        let local_fqn = format!("com/example/Mod{i:02}Service#");
+        let local_method_fqn = format!("com/example/Mod{i:02}Service#handle().");
+
+        let symbols = vec![
+            IntermediateSymbol {
+                fqn: local_fqn.clone(),
+                display_name: format!("Mod{i:02}Service"),
+                kind: SymbolKind::Class,
+                properties: 0,
+                signature: format!("class Mod{i:02}Service"),
+                parents: vec![],
+                overridden_symbols: vec![],
+                access: Access::Public,
+            },
+            IntermediateSymbol {
+                fqn: local_method_fqn.clone(),
+                display_name: "handle".to_string(),
+                kind: SymbolKind::Method,
+                properties: 0,
+                signature: "def handle(): Unit".to_string(),
+                parents: vec![],
+                overridden_symbols: vec![],
+                access: Access::Public,
+            },
+        ];
+
+        let mut occurrences = vec![
+            IntermediateOccurrence {
+                symbol: local_fqn,
+                role: ReferenceRole::Definition,
+                start_line: 3, start_col: 6, end_col: 20,
+            },
+            IntermediateOccurrence {
+                symbol: local_method_fqn.clone(),
+                role: ReferenceRole::Definition,
+                start_line: 5, start_col: 6, end_col: 12,
+            },
+        ];
+
+        // RequestContext: 25 modules (i < 25), ~8 refs each = ~200 total
+        if i < 25 {
+            for j in 0..8 {
+                occurrences.push(IntermediateOccurrence {
+                    symbol: "com/example/RequestContext#".to_string(),
+                    role: ReferenceRole::Reference,
+                    start_line: 10 + j, start_col: 4, end_col: 18,
+                });
+            }
+            // Also reference userId (leaf method) — builds call graph for effect plumbing
+            for j in 0..6 {
+                occurrences.push(IntermediateOccurrence {
+                    symbol: "com/example/RequestContext#userId().".to_string(),
+                    role: ReferenceRole::Reference,
+                    start_line: 20 + j, start_col: 4, end_col: 10,
+                });
+            }
+        }
+
+        // DatabaseDriver: 45 modules (i < 45), ~13 refs each = ~585 total
+        if i < 45 {
+            for j in 0..13 {
+                occurrences.push(IntermediateOccurrence {
+                    symbol: "com/example/DatabaseDriver#".to_string(),
+                    role: ReferenceRole::Reference,
+                    start_line: 30 + j, start_col: 4, end_col: 18,
+                });
+            }
+        }
+
+        // AuthContext: 20 modules (i < 20), ~7 refs each = ~140 total
+        if i < 20 {
+            for j in 0..7 {
+                occurrences.push(IntermediateOccurrence {
+                    symbol: "com/example/AuthContext#".to_string(),
+                    role: ReferenceRole::Reference,
+                    start_line: 50 + j, start_col: 4, end_col: 15,
+                });
+            }
+        }
+
+        // StringUtils: 40 modules (i < 40), ~10 refs each = ~400 total
+        if i < 40 {
+            for j in 0..10 {
+                occurrences.push(IntermediateOccurrence {
+                    symbol: "com/example/StringUtils.".to_string(),
+                    role: ReferenceRole::Reference,
+                    start_line: 60 + j, start_col: 4, end_col: 15,
+                });
+            }
+        }
+
+        // Note: handle() → userId() call graph edges are created by the
+        // Reference occurrences above (within handle()'s body scope)
+
+        docs.push(IntermediateDoc {
+            uri,
+            module_segments: module_name,
+            symbols,
+            occurrences,
+        });
+    }
+
+    docs
+}
+
+/// Fixture for testing FQN not-found suggestions.
+///
+/// Two services with overlapping method names:
+///   - `LoginService` with `login()` method
+///   - `LoginWithMFAService` with `login()` method
+///
+/// When user passes wrong FQN `LoginService#loginWithMFA().`, the suggestion
+/// should find `LoginWithMFAService` by extracting the method name.
+#[allow(dead_code)]
+pub fn make_fqn_suggestion_docs() -> Vec<IntermediateDoc> {
+    vec![IntermediateDoc {
+        uri: "modules/auth/src/com/example/Auth.scala".to_string(),
+        module_segments: "modules.auth".to_string(),
+        symbols: vec![
+            IntermediateSymbol {
+                fqn: "com/example/LoginService#".to_string(),
+                display_name: "LoginService".to_string(),
+                kind: SymbolKind::Class,
+                properties: 0,
+                signature: "class LoginService".to_string(),
+                parents: vec![],
+                overridden_symbols: vec![],
+                access: Access::Public,
+            },
+            IntermediateSymbol {
+                fqn: "com/example/LoginService#login().".to_string(),
+                display_name: "login".to_string(),
+                kind: SymbolKind::Method,
+                properties: 0,
+                signature: "def login(): Token".to_string(),
+                parents: vec![],
+                overridden_symbols: vec![],
+                access: Access::Public,
+            },
+            IntermediateSymbol {
+                fqn: "com/example/LoginWithMFAService#".to_string(),
+                display_name: "LoginWithMFAService".to_string(),
+                kind: SymbolKind::Class,
+                properties: 0,
+                signature: "class LoginWithMFAService".to_string(),
+                parents: vec![],
+                overridden_symbols: vec![],
+                access: Access::Public,
+            },
+            IntermediateSymbol {
+                fqn: "com/example/LoginWithMFAService#loginWithMFA().".to_string(),
+                display_name: "loginWithMFA".to_string(),
+                kind: SymbolKind::Method,
+                properties: 0,
+                signature: "def loginWithMFA(): Token".to_string(),
+                parents: vec![],
+                overridden_symbols: vec![],
+                access: Access::Public,
+            },
+            IntermediateSymbol {
+                fqn: "com/example/LoginWithMFAService#login().".to_string(),
+                display_name: "login".to_string(),
+                kind: SymbolKind::Method,
+                properties: 0,
+                signature: "def login(): Token".to_string(),
+                parents: vec![],
+                overridden_symbols: vec![],
+                access: Access::Public,
+            },
+        ],
+        occurrences: vec![
+            IntermediateOccurrence {
+                symbol: "com/example/LoginService#".to_string(),
+                role: ReferenceRole::Definition,
+                start_line: 3, start_col: 6, end_col: 18,
+            },
+            IntermediateOccurrence {
+                symbol: "com/example/LoginService#login().".to_string(),
+                role: ReferenceRole::Definition,
+                start_line: 5, start_col: 6, end_col: 11,
+            },
+            IntermediateOccurrence {
+                symbol: "com/example/LoginWithMFAService#".to_string(),
+                role: ReferenceRole::Definition,
+                start_line: 10, start_col: 6, end_col: 25,
+            },
+            IntermediateOccurrence {
+                symbol: "com/example/LoginWithMFAService#loginWithMFA().".to_string(),
+                role: ReferenceRole::Definition,
+                start_line: 12, start_col: 6, end_col: 18,
+            },
+            IntermediateOccurrence {
+                symbol: "com/example/LoginWithMFAService#login().".to_string(),
+                role: ReferenceRole::Definition,
+                start_line: 15, start_col: 6, end_col: 11,
+            },
+        ],
+    }]
+}
+
 /// Wrapper that keeps the tempdir alive alongside the IndexReader.
 #[allow(dead_code)]
 pub struct TestIndex {
