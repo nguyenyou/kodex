@@ -13,9 +13,9 @@ const PLUMBING_MIN_CALL_SITES: usize = 5;
 const PLUMBING_MAX_CALLEES: usize = 1;
 
 /// Minimum reference count to consider a type as a hub utility.
-const HUB_MIN_REFS: usize = 100;
-/// Minimum module spread for hub utilities.
-const HUB_MIN_MODULES: usize = 3;
+const HUB_MIN_REFS: usize = 300;
+/// Absolute floor for module spread — adaptive threshold may be higher.
+const HUB_MIN_MODULES_FLOOR: usize = 10;
 
 /// Infrastructure plumbing: method call sites threshold.
 const INFRA_MIN_CALL_SITES: usize = 10;
@@ -70,7 +70,8 @@ struct NoiseCandidate {
 }
 
 impl NoiseCandidate {
-    /// Build a candidate for a method symbol, using its owner name for display/exclude.
+    /// Build a candidate for a method symbol, using qualified owner.method for exclude.
+    /// This ensures the noise pattern targets the specific method, not the entire owning type.
     fn method(index: &ArchivedKodexIndex, sid: u32, evidence: String) -> Self {
         let sym = sym_at(index, sid);
         let name = s(index, sym.name);
@@ -83,7 +84,7 @@ impl NoiseCandidate {
         let exclude_name = if oname.is_empty() {
             name.to_string()
         } else {
-            oname.to_string()
+            format!("{oname}.{name}")
         };
         Self {
             exclude_name,
@@ -426,6 +427,10 @@ fn detect_effect_plumbing(
 }
 
 /// Category 2: Types with very high reference counts spread across many modules.
+///
+/// Uses adaptive thresholds: module spread must be at least half of all modules
+/// (with a floor of 10), and ref count must be ≥300. This prevents domain types
+/// that are widely used (but not ubiquitous) from being classified as noise.
 fn detect_hub_utilities(
     index: &ArchivedKodexIndex,
     ref_counts: &FxHashMap<u32, usize>,
@@ -433,6 +438,9 @@ fn detect_hub_utilities(
     emitted: &mut FxHashSet<u32>,
     limit: usize,
 ) -> Vec<NoiseCandidate> {
+    let total_modules = index.modules.len();
+    let min_modules = (total_modules / 2).max(HUB_MIN_MODULES_FLOOR);
+
     let mut candidates: Vec<(u32, usize, usize)> = Vec::new(); // (sym_id, refs, modules)
 
     for (&sid, &refs) in ref_counts {
@@ -450,7 +458,7 @@ fn detect_hub_utilities(
             continue;
         }
         let modules = module_spreads.get(&sid).copied().unwrap_or(0);
-        if modules < HUB_MIN_MODULES {
+        if modules < min_modules {
             continue;
         }
         candidates.push((sid, refs, modules));

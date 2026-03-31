@@ -6,6 +6,7 @@
 
 mod common;
 
+use kodex::query::commands::info::cmd_info;
 use kodex::query::symbol::{edges_from, resolve_symbols};
 
 // ── Bug 1: FQN lookup ──────────────────────────────────────────────────────
@@ -140,5 +141,44 @@ fn callees_of_concrete_method_still_works() {
         callees
             .iter()
             .any(|v| u32::from(*v) == u32::from(save_sym.id))
+    );
+}
+
+// ── FQN not-found should suggest symbols with matching method name ─────────
+
+#[test]
+fn fqn_not_found_suggests_same_method_name() {
+    let reader = common::build_and_load_index(common::make_fqn_suggestion_docs());
+    let index = reader.index();
+
+    // User passes a wrong FQN — the method name "loginWithMFA" exists on
+    // LoginWithMFAService, not LoginService.
+    let result = cmd_info(index, "com/example/LoginService#loginWithMFA().", &[]);
+    assert!(
+        !result.is_found(),
+        "wrong FQN should not be found"
+    );
+
+    let output = result.output();
+    assert!(
+        output.contains("LoginWithMFAService"),
+        "suggestion should include the correct owner 'LoginWithMFAService'.\n\
+         Got output:\n{output}"
+    );
+}
+
+#[test]
+fn fqn_not_found_suggests_with_fqn_line() {
+    let reader = common::build_and_load_index(common::make_fqn_suggestion_docs());
+    let index = reader.index();
+
+    let result = cmd_info(index, "com/example/LoginService#loginWithMFA().", &[]);
+    let output = result.output();
+
+    // Suggestion should include a copyable FQN line
+    assert!(
+        output.contains("fqn:"),
+        "suggestion should include 'fqn:' line for copy-paste.\n\
+         Got output:\n{output}"
     );
 }
