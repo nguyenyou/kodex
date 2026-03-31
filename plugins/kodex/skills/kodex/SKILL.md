@@ -58,7 +58,13 @@ By default kodex looks for `.scalex/kodex.idx` in the current directory. To quer
 kodex search Auth --idx /path/to/other-project/.scalex/kodex.idx
 ```
 
-Or set the `KODEX_IDX` environment variable. The `--idx` flag is global — it works with all commands.
+Or set the `KODEX_IDX` environment variable for the session — avoids passing `--idx` on every command:
+```bash
+export KODEX_IDX=/path/to/other-project/.scalex/kodex.idx
+kodex search Auth     # uses KODEX_IDX automatically
+```
+
+The `--idx` flag is global — it works with all commands and takes precedence over the env var. Note: source code in `info`/`trace` is resolved relative to the workspace root stored at index time — if you query from a different directory, source excerpts may not render.
 
 ## Core workflow
 
@@ -93,7 +99,7 @@ Modules:
   ...
 ```
 
-Module names shown here work directly with `search --module`.
+Module names shown here work directly with `search --module`. When a module has an artifact name (from build metadata), that's shown instead of the dotted segment path — `--module` matches against both.
 
 ### `search` — find symbols by name
 
@@ -101,12 +107,13 @@ Module names shown here work directly with `search --module`.
 kodex search <QUERY> [--kind K] [--module M] [--limit N] [--exclude "p1,p2"] [--include-noise]
 ```
 
-Search is smart — it tries exact matches first, then progressively fuzzier strategies (FQN suffix, owner.member notation, substring, CamelCase abbreviation, typo correction). You can search with:
+Search is smart — it tries exact matches first, then progressively fuzzier strategies (FQN suffix, owner.member notation, substring, CamelCase, typo correction). CamelCase matching has three strategies: segment abbreviation (`hcf` → `HttpClientFactory` — each char starts a CamelCase segment), segment subsequence (`UserService` → `UserProfileService`), and character subsequence (`lpfuse` → `linkProfileForUser` — lowercase chars match at segment boundaries). You can search with:
 
 ```bash
 kodex search OrderService                    # exact name
 kodex search handleReq                       # substring
-kodex search hcf                             # CamelCase: HttpClientFactory
+kodex search hcf                             # CamelCase abbreviation: HttpClientFactory
+kodex search lpfuse                          # CamelCase char subsequence: linkProfileForUser
 kodex search processPyment                   # typo correction
 kodex search Component.Backend.render        # nested owner.member (up to 5 levels)
 kodex search OrderService --kind trait       # filter by kind
@@ -125,12 +132,12 @@ kodex search --module billing.jvm --kind class   # plain classes in billing JVM 
 
 **Flags:**
 - `--kind`: class (plain only — excludes case classes and enums), case-class, trait, object, method, field, type, constructor, enum
-- `--module`: substring match, or dotted segments in order (e.g. `storage.jvm` matches `modules.storage.storage.jvm`)
+- `--module`: substring match, or dotted segments in order (e.g. `storage.jvm` matches `modules.storage.storage.jvm`). Also matches against `artifact_name` — so `--module my-app-server` works if that's the artifact name shown in `overview`
 - `--limit`: default 50 (0=unlimited)
 - `--include-noise`: show noise (generated code, plumbing methods) — excluded by default
 - `--exclude "p1,p2"`: manual comma-separated exclusion patterns
 
-**Output — single match** (auto-expanded detail view):
+**Output — single match** (auto-expanded detail view — saves a follow-up `info` call):
 ```
 trait OrderService — modules.orders.orders.jvm — src/com/example/OrderService.scala:10-50
   fqn: com/example/OrderService#
@@ -164,7 +171,7 @@ Every result includes an FQN — copy it directly into `info`, `calls`, `trace`,
 kodex info '<FQN>' [--include-noise] [--exclude "p1,p2"]
 ```
 
-The most powerful command. Returns everything about a symbol — including **full source code**, so you rarely need a separate file read:
+The most powerful command. Returns everything about a symbol — including **source code** (full body when end_line is known, otherwise first 30 lines), so you rarely need a separate file read. Source is read from disk using the workspace root stored at index time — run queries from the same directory where you ran `kodex index`:
 
 ```
 method createOrder [modules.orders.orders.jvm] — src/com/example/OrderService.scala:45-78
@@ -222,7 +229,8 @@ method createOrder [modules.orders.orders.jvm] — src/com/example/OrderService.
 **What to notice:**
 - Every sub-symbol has an FQN — copy-paste to chain `info` calls without re-searching
 - Entries marked `cross-module` indicate module boundaries — key for architecture understanding
-- When callers/callees exceed 50, info prints the exact `calls` command to run — follow that hint
+- Callers/callees are **capped at 50** — when exceeded, info prints the exact `calls` command to get the full list
+- Callers are **trait-aware**: if this method overrides a trait method, callers of the base trait are merged in (this is unique to `info` — `calls -r` doesn't do this)
 - Members are sorted: types first, then methods, then vals (DI injections sink to bottom)
 
 ### `calls` — call tree traversal
@@ -256,11 +264,12 @@ create [modules.myapp]
 
 **Reading the output:**
 - Indentation = call depth
-- `— cross-module` = call crosses a module boundary
-- Cycle detection prevents infinite traversal at already-visited nodes
-- Empty tree? The diagnostic suggests alternative FQNs that have call edges — useful when you picked the wrong overload
+- `— cross-module` annotation = the callee's module differs from the **root** node's module
+- `--cross-module-only` **filtering** compares each neighbor against its **parent** node's module (not the root) — so edges between two non-root modules are kept if they cross a boundary
+- Cycles print `(cycle detected)` and stop recursing at already-visited nodes
+- Empty tree? The diagnostic lists other variants of the same-named symbol that **do** have call edges — crucial for picking the right overload
 
-**Trait-aware callers:** When walking upstream (`-r`), kodex automatically includes callers of the base trait/abstract method, not just the concrete implementation. So `kodex calls -r 'impl/OrderServiceImpl#create().'` also finds callers that call `trait/OrderService#create().'` — essential for polymorphic call sites.
+**Trait-aware callers (info only):** `info`'s Callers section merges callers of the base trait/abstract method with callers of the concrete override — essential for polymorphic call sites. `calls -r` does **not** do this; it only walks direct reverse edges. If `calls -r` on a concrete override looks incomplete, run `info` on the base trait method to see the full caller set, or run `calls -r` on the base trait FQN directly.
 
 **Flags:**
 - `--depth N`: default 3
@@ -296,14 +305,14 @@ method Service.create [modules.myapp] — src/com/example/Service.scala:45-78
           12 | def save(record: Record) = { ... }
 ```
 
-Each node shows kind, owner.name, module, file location, FQN, signature, and source (first 10 lines).
+Each node shows kind, owner.name, module, file location, FQN, signature, and source (**max 10 lines** per node — truncated for longer methods). Cycles are detected and shown as `(cycle detected)` at visited nodes.
 
 Takes the same flags as `calls` (`--depth`, `-r`, `--cross-module-only`, `--include-noise`, `--exclude`).
 
 **When to choose:**
-- `info` — deep detail on **one** symbol (members, overrides, implementations, full source)
+- `info` — deep detail on **one** symbol (members, overrides, implementations, source up to 30 lines or full body)
 - `calls` — compact tree of names across many levels
-- `trace` — rich detail across multiple levels, best for understanding execution flows end-to-end
+- `trace` — rich detail across multiple levels (10 lines source per node), best for understanding execution flows end-to-end
 
 ### `refs` — where is a symbol used?
 
@@ -353,14 +362,18 @@ Noise is **excluded by default** across all commands — no flag needed. There a
 - **stdlib**: scala/Predef, scala/Option, scala/collection/\*, java/lang/\*, java/util/\*, etc.
 - **Plumbing methods**: apply, unapply, map, flatMap, filter, foreach, collect, foldLeft, foldRight, get, getOrElse, orElse, succeed, pure, attempt, traverse, etc.
 - **Test files and generated files** (ScalaPB, protobuf, src_managed, BuildInfo)
-- **Call graph extras**: val/var accessors (dependency wiring, not real calls), $default$ parameter accessors, tuple accessors (_1, _2), synthetic names
+- **Call graph extras** (filtered in callers/callees/calls/trace only):
+  - val/var field accessors — these are dependency wiring reads, not real method calls. If a val dependency doesn't show as a callee, this is why
+  - `$default$` parameter accessors (e.g., `foo$default$1`)
+  - Tuple accessors (`_1`, `_2`, ...)
+  - Synthetic names (derived$, given_, $anon, etc.)
 - **Boilerplate parents**: Object, Product, Serializable are filtered from the Extends section
 
 **Project-specific patterns** (from `.scalex/noise.conf` — editable):
 
 `kodex index` auto-generates `.scalex/noise.conf` with heuristically detected noise patterns (effect plumbing, hub utilities, ID factories, store ops, infrastructure plumbing). All commands read from this file instead of re-computing noise on every run.
 
-The file is one pattern per line, `#` comments, blank lines ignored. `kodex index` only creates it if missing — edits are preserved across re-indexes. `kodex noise --init` regenerates it from scratch.
+The file is one pattern per line, `#` comments, blank lines ignored, whitespace trimmed. Each pattern is a **substring match** against the symbol's FQN, display name, or owner name — so a pattern like `OrderStore` matches any symbol whose FQN contains "OrderStore". `kodex index` only creates it if missing — edits are preserved across re-indexes. `kodex noise --init` regenerates it from scratch.
 
 ### Noise management
 
@@ -491,8 +504,10 @@ wait
 - **Index not found**: Run `kodex index --root .`
 - **Too much noise**: Noise is excluded by default. Run `kodex noise` to see what's filtered.
 - **Noise filter too aggressive**: Edit `.scalex/noise.conf` to remove false positive patterns. Run `kodex noise --init` to reset.
-- **Symbol not found**: Try a shorter substring, CamelCase abbreviation, or `Owner.member` syntax.
+- **Symbol not found**: kodex prints "Did you mean?" suggestions via fuzzy matching — check those first. Otherwise try a shorter substring, CamelCase abbreviation, or `Owner.member` syntax.
 - **info/calls/refs "Not found"**: These need exact FQNs. Run `search` first, then copy the FQN.
 - **Shell errors with FQNs**: Single-quote FQNs: `kodex info 'com/example/Foo#bar().'`
-- **Wrong overload picked**: `calls` shows an empty tree? Check the diagnostic — it suggests alternative FQNs with call edges.
-- **Missing callers for override**: Callers are trait-aware automatically. If callers look incomplete, the base trait method's FQN may differ — check `info`'s Overrides section.
+- **Wrong overload picked**: `calls` shows an empty tree? Check the diagnostic — it lists other variants of the same-named symbol that have call edges.
+- **Missing callers for override**: `info`'s Callers section is trait-aware (merges base trait callers). `calls -r` is not — run `info` or `calls -r` on the base trait's FQN instead.
+- **val dependency not showing as callee**: val/var field reads are filtered from call graphs (they're dependency wiring, not method calls). Use `refs` to see where a val is referenced.
+- **Source not showing in info/trace**: Source is read from disk relative to the workspace root stored at index time. Run queries from the same directory where you ran `kodex index`.
