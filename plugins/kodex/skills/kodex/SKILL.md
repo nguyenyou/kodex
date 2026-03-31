@@ -79,7 +79,7 @@ overview → noise check → search → info → calls/refs
 4. **`info`** — paste an FQN, get the complete picture (signature, members, call graph, source code).
 5. **`calls`** / **`refs`** — go deeper when info's capped preview isn't enough.
 
-**Key distinction:** `info` shows call graph (callers/callees) — best for **methods**. For **types** (class/trait), use `refs` to see where the type is used across the codebase.
+**Key distinction:** `info` shows call graph (callers/callees) for **methods** and implementations/members for **types**. Both show an aggregate reference count. Use `refs` when you need the actual file:line locations — especially useful for types, since `info` on a type has no call graph section to reveal usage sites.
 
 ## Commands
 
@@ -341,7 +341,7 @@ Locations:
 - Only reference sites — definitions are excluded (you already know where it's defined from `info`).
 - Line numbers are deduped and comma-separated per file.
 
-**When to use refs:** `info` shows callers/callees for methods. For **types** (class/trait), `refs` is the way to see usage across the codebase — `info` won't show type references.
+**When to use refs:** `info` on a type shows the reference *count* and implementations, but not *where* those references are. `refs` gives the file:line locations. For methods, `info`'s callers/callees often suffice — use `refs` when you need every usage site.
 
 ### `noise` — find noise patterns
 
