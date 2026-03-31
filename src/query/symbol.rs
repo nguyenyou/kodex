@@ -954,7 +954,8 @@ fn extract_name_from_fqn(fqn: &str) -> &str {
 }
 
 /// Find "Did you mean: X?" suggestions when a query finds nothing.
-/// Uses Damerau-Levenshtein with a threshold scaled to query length.
+/// Tries FQN-aware extraction first (if query looks like an FQN), then
+/// Damerau-Levenshtein fuzzy matching, then CamelCase segment matching.
 /// Returns formatted suggestion text (empty string if no suggestions).
 pub fn suggest_similar(index: &ArchivedKodexIndex, query: &str) -> String {
     // FQN-aware suggestion: if query looks like an FQN, extract the method/type
