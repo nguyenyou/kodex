@@ -70,8 +70,9 @@ struct NoiseCandidate {
 }
 
 impl NoiseCandidate {
-    /// Build a candidate for a method symbol, using qualified owner.method for exclude.
-    /// This ensures the noise pattern targets the specific method, not the entire owning type.
+    /// Build a candidate for a method symbol, using qualified owner+method for exclude.
+    /// Uses the FQN separator (`#` for class/trait members, `.` for object members)
+    /// so the pattern substring-matches the symbol's FQN in `matches_exclude`.
     fn method(index: &ArchivedKodexIndex, sid: u32, evidence: String) -> Self {
         let sym = sym_at(index, sid);
         let name = s(index, sym.name);
@@ -84,7 +85,17 @@ impl NoiseCandidate {
         let exclude_name = if oname.is_empty() {
             name.to_string()
         } else {
-            format!("{oname}.{name}")
+            // Use the separator from the actual FQN so the pattern matches
+            // via fqn.contains(pattern) in matches_exclude.
+            // Class/trait members: "Owner#method" matches "com/pkg/Owner#method()."
+            // Object members: "Owner.method" matches "com/pkg/Owner.method."
+            let fqn = s(index, sym.fqn);
+            let hash_pattern = format!("{oname}#{name}");
+            if fqn.contains(&hash_pattern) {
+                hash_pattern
+            } else {
+                format!("{oname}.{name}")
+            }
         };
         Self {
             exclude_name,

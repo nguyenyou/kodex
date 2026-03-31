@@ -45,3 +45,17 @@ fn invariants_hold_for_single_symbol() {
     let index = build_index(&docs, None, ".");
     validate_index(&index);
 }
+
+#[test]
+fn invariants_hold_for_hub_noise_fixture() {
+    let docs = common::make_hub_noise_docs();
+    let index = build_index(&docs, None, ".");
+    validate_index(&index);
+}
+
+#[test]
+fn invariants_hold_for_fqn_suggestion_fixture() {
+    let docs = common::make_fqn_suggestion_docs();
+    let index = build_index(&docs, None, ".");
+    validate_index(&index);
+}

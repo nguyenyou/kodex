@@ -4,6 +4,8 @@
 mod common;
 
 use kodex::query::commands::noise::compute_noise_patterns;
+use kodex::query::filter::matches_exclude;
+use kodex::query::symbol::find_by_fqn;
 
 fn all_noise_patterns(index: &kodex::model::ArchivedKodexIndex) -> Vec<String> {
     compute_noise_patterns(index, 15)
@@ -74,16 +76,68 @@ fn effect_plumbing_emits_method_not_owner() {
     let rc_patterns: Vec<&String> = patterns.iter().filter(|p| p.contains("RequestContext")).collect();
     assert!(
         !rc_patterns.is_empty(),
-        "Expected at least one noise pattern involving RequestContext.userId as effect plumbing.\n\
+        "Expected at least one noise pattern involving RequestContext+userId as effect plumbing.\n\
          Got patterns: {patterns:?}"
     );
     for p in &rc_patterns {
         assert!(
-            p.contains('.') && p.contains("userId"),
+            (p.contains('#') || p.contains('.')) && p.contains("userId"),
             "Noise pattern containing 'RequestContext' should be method-qualified \
-             (e.g., 'RequestContext.userId'), not type-level. Got: '{p}'"
+             (e.g., 'RequestContext#userId' or 'RequestContext.userId'), not type-level. Got: '{p}'"
         );
     }
+}
+
+// ── Noise patterns must actually filter via matches_exclude ────────────────
+
+#[test]
+fn method_noise_pattern_matches_class_member_fqn() {
+    // The emitted noise pattern must substring-match the symbol's FQN.
+    // Class/trait members use '#' in FQN (e.g., RequestContext#userId().),
+    // so the exclude pattern must use '#' not '.' to actually filter.
+    let ti = common::build_and_load_index(common::make_hub_noise_docs());
+    let index = ti.index();
+    let patterns = all_noise_patterns(index);
+
+    // Find the userId pattern
+    let rc_pattern = patterns
+        .iter()
+        .find(|p| p.contains("RequestContext") && p.contains("userId"))
+        .expect("should have a RequestContext+userId noise pattern");
+
+    // The pattern must actually work with matches_exclude
+    let user_id_sym = find_by_fqn(index, "com/example/RequestContext#userId().")
+        .expect("userId symbol should exist in index");
+
+    let exclude = vec![rc_pattern.clone()];
+    assert!(
+        matches_exclude(index, user_id_sym, &exclude),
+        "Noise pattern '{rc_pattern}' must match symbol with FQN 'com/example/RequestContext#userId().'\n\
+         Pattern should substring-match the FQN. If using '.' separator, it won't match '#' in FQN."
+    );
+}
+
+#[test]
+fn method_noise_pattern_does_not_match_owner_type() {
+    // The method-level pattern should NOT match the owning type itself
+    let ti = common::build_and_load_index(common::make_hub_noise_docs());
+    let index = ti.index();
+    let patterns = all_noise_patterns(index);
+
+    let rc_pattern = patterns
+        .iter()
+        .find(|p| p.contains("RequestContext") && p.contains("userId"))
+        .expect("should have a RequestContext+userId noise pattern");
+
+    let owner_sym = find_by_fqn(index, "com/example/RequestContext#")
+        .expect("RequestContext type should exist in index");
+
+    let exclude = vec![rc_pattern.clone()];
+    assert!(
+        !matches_exclude(index, owner_sym, &exclude),
+        "Noise pattern '{rc_pattern}' must NOT match the owning type 'RequestContext#'.\n\
+         Method-level patterns should only filter the specific method."
+    );
 }
 
 // ── Small codebases should not produce hub noise ───────────────────────────
