@@ -2,6 +2,16 @@
 
 ## [Unreleased]
 
+## [1.6.0] — 2026-03-31
+
+### Fixed
+- **Method-level noise patterns** — `NoiseCandidate::method()` now emits `Owner#method` (using the FQN separator) instead of `Owner` as the exclude pattern. Previously, detecting `ServiceActor#userId` as effect plumbing would emit `ServiceActor`, filtering the entire type and all its members from search/info results. Now emits `ServiceActor#userId` which targets only the specific noisy method.
+- **Hub utilities thresholds too aggressive** — raised `HUB_MIN_REFS` from 100 to 300 and made `HUB_MIN_MODULES` adaptive: `max(total_modules / 2, 10)` instead of fixed 3. Core domain types like `ServiceActor` (203 refs, 25 modules) are no longer classified as noise in large codebases.
+- **FQN separator mismatch in noise patterns** — method noise patterns now use `#` for class/trait members and `.` for object members, matching the actual SemanticDB FQN format. Previously used `.` unconditionally, which silently failed to filter class member methods via `matches_exclude`.
+
+### Added
+- **FQN-aware not-found suggestions** — when `info`, `calls`, `refs`, or `trace` receives a not-found FQN, `suggest_similar` now extracts the method/type name and searches globally. Shows matching symbols with copyable `fqn:` lines. Example: passing `LoginService#loginWithPassword().` now suggests `LoginWithMFAService#loginWithPassword().` instead of showing no suggestions.
+
 ## [1.5.0] — 2026-03-30
 
 ### Added
